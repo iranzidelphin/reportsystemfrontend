@@ -226,7 +226,7 @@ function TransactionTable({ rows = [], loading, error, adding = false, draft = e
         <td>{money(t.remainingAmount)} <small>RWF</small></td>
         <td>{t.paymentMethod === 'MOMO' ? 'MoMo Pay' : 'Cash'}</td>
         <td>{t.notes || '-'}</td>
-        <td>{canChangeRows && <><button className="row-action" onClick={() => startEdit(t)}><Edit2 size={16} /></button><button className="row-action" onClick={() => onDelete?.(t._id)}><Trash2 size={16} /></button></>}</td>
+        <td>{canChangeRows && <><button className="row-action" onClick={() => startEdit(t)}><Edit2 size={16} /></button><button className="row-action" onClick={() => confirmDelete() && onDelete?.(t._id)}><Trash2 size={16} /></button></>}</td>
       </tr>)}
       <tr className="total-row"><td colSpan="3">Total</td><td>{money(totals.paidAmount)} <small>RWF</small></td><td>{money(totals.remainingAmount)} <small>RWF</small></td><td colSpan="3"></td></tr>
     </tbody>
@@ -283,6 +283,10 @@ function SectionTitle({ title, text, link, action }) {
 
 function Notice({ children, tone = 'info' }) {
   return <div className={'notice ' + tone}>{children}</div>
+}
+
+function confirmDelete() {
+  return window.confirm('Are you sure you want to delete this row?')
 }
 
 function Login({ auth }) {
@@ -580,7 +584,7 @@ function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUp
       <td><input required min="1" type="number" value={editDraft.amount} onChange={(e) => setEditDraft({ ...editDraft, amount: e.target.value })} /></td>
       <td><Select value={editDraft.paymentMethod} onChange={(paymentMethod) => setEditDraft({ ...editDraft, paymentMethod })} /></td>
       <td className="row-buttons"><button className="button" onClick={saveStockEdit} disabled={editing}>{editing ? 'Saving...' : 'Save'}</button><button className="button secondary" onClick={() => setEditingId('')}>Cancel</button></td>
-    </tr> : <tr key={row._id}>{resourceCells(type, row).map((cell, i) => <td key={i}>{cell}</td>)}<td>{type === 'expenses' && onUpdate && <button className="row-action" onClick={() => startStockEdit(row)}><Edit2 size={16} /></button>}{type === 'users' && onEdit && <button className="row-action" onClick={() => onEdit(row)}><Edit2 size={16} /></button>}{type !== 'logs' && onDelete && <button className="row-action" onClick={() => onDelete(row._id)}><Trash2 size={16} /></button>}</td></tr>)}
+    </tr> : <tr key={row._id}>{resourceCells(type, row).map((cell, i) => <td key={i}>{cell}</td>)}<td>{type === 'expenses' && onUpdate && <button className="row-action" onClick={() => startStockEdit(row)}><Edit2 size={16} /></button>}{type === 'users' && onEdit && <button className="row-action" onClick={() => onEdit(row)}><Edit2 size={16} /></button>}{type !== 'logs' && onDelete && <button className="row-action" onClick={() => confirmDelete() && onDelete(row._id)}><Trash2 size={16} /></button>}</td></tr>)}
     {type === 'expenses' && <tr className="total-row"><td colSpan="3">Total</td><td>{money(stockTotal)} <small>RWF</small></td><td colSpan="2"></td></tr>}
   </tbody></table></div>
 }

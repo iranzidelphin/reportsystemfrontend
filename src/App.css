@@ -90,3 +90,4 @@
   .inline-row td{display:grid!important;grid-template-columns:1fr!important}
   .inline-row input,.inline-row select{width:100%!important;min-width:0!important}
 }
+th{font-weight:900!important;color:#334155!important}
