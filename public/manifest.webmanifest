@@ -1,0 +1,20 @@
+{
+  "name": "Shop Report System",
+  "short_name": "Shop Report",
+  "description": "Sales, reports, and imported stock tracking.",
+  "start_url": "/#/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "window-controls-overlay"],
+  "orientation": "portrait-primary",
+  "background_color": "#eef3f8",
+  "theme_color": "#246bfd",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
