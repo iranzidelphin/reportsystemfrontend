@@ -427,7 +427,7 @@ function ReportsPage({ auth }) {
     <Card className="page-hero"><div><p className="eyebrow">REPORTING</p><h2>Daily reports</h2><p>Totals update automatically from saved transactions.</p></div><div className="hero-buttons"><button className="button" onClick={downloadReport}>Download report</button></div></Card>
     <DateControls range={range} setRange={setRange} compact />
     <div className="stat-grid report-stats">{[
-      ['Total money earned', data.totalMoneyEarned ?? data.totalPaid], ['Total remaining money', data.totalRemainingMoney ?? data.totalRemaining],
+      ['Total money earned', data.totalMoneyEarned ?? data.totalPaid], ['Total remaining money', data.totalRemainingMoney ?? data.totalRemaining], ['Cash received', data.totalCash], ['MoMo Pay received', data.totalMomo],
     ].map(([label, value]) => <Card className="stat-card" key={label}><p>{label}</p><h2>{money(value)} <small>RWF</small></h2></Card>)}</div>
     <Card className="recent"><SectionTitle title="Sales report" text="Transactions for the selected device date" action={<button className="button" onClick={() => setAdding(true)}><Plus size={16} /> Add row</button>} /><TransactionTable rows={data.transactions || []} loading={report.loading} error={report.error} adding={adding} draft={draft} setDraft={setDraft} onSave={saveRow} onCancel={() => { setAdding(false); setDraft(emptyTransaction) }} saving={saving} onUpdate={updateTransaction} onDelete={deleteTransaction} /></Card>
   </div></AppShell>
