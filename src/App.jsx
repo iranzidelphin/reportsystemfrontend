@@ -6,7 +6,7 @@ import {
   Trash2, Users, Wallet, X,
 } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
-import api from './services/api'
+import api, { API_BASE_URL } from './services/api'
 import './App.css'
 
 const money = (value) => new Intl.NumberFormat('en-US').format(Number(value || 0))
@@ -416,7 +416,7 @@ function ReportsPage({ auth }) {
   }
   const downloadReport = async () => {
     const params = new URLSearchParams(Object.fromEntries(Object.entries(range).filter(([, value]) => value))).toString()
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/reports/sales/pdf?${params}`, {
+    const response = await fetch(`${API_BASE_URL}/reports/sales/pdf?${params}`, {
       headers: { Authorization: `Bearer ${sessionStorage.getItem('shop_report_token')}` },
     })
     const blob = await response.blob()
@@ -510,7 +510,7 @@ function ResourcePage({ auth, type, title }) {
   }
   const downloadStockReport = async () => {
     const params = new URLSearchParams(range).toString()
-    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/reports/imported-stock/pdf?${params}`, {
+    const response = await fetch(`${API_BASE_URL}/reports/imported-stock/pdf?${params}`, {
       headers: { Authorization: `Bearer ${sessionStorage.getItem('shop_report_token')}` },
     })
     const blob = await response.blob()

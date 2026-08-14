@@ -1,7 +1,14 @@
 import axios from 'axios'
 
+const configuredApiUrl = import.meta.env.VITE_API_URL
+  || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://reportsystembackend.onrender.com/api')
+
+export const API_BASE_URL = configuredApiUrl.replace(/\/+$/, '').endsWith('/api')
+  ? configuredApiUrl.replace(/\/+$/, '')
+  : `${configuredApiUrl.replace(/\/+$/, '')}/api`
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
 })
 
