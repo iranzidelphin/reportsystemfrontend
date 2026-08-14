@@ -195,7 +195,7 @@ function TransactionTable({ rows = [], loading, error, adding = false, draft = e
     }
   }
 
-  return <div className="table-wrap"><table>
+  return <div className="table-wrap"><table className="transaction-table">
     <thead><tr><th>Date</th><th>User</th><th>Product name</th><th>Paid</th><th>Rest</th><th>Method</th><th>Description</th><th></th></tr></thead>
     <tbody>
       {adding && <tr className="inline-row">
@@ -563,7 +563,7 @@ function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUp
       setEditing(false)
     }
   }
-  return <div className="table-wrap"><table><thead><tr>{cols.map((c) => <th key={c}>{c}</th>)}<th></th></tr></thead><tbody>
+  return <div className="table-wrap"><table className={`resource-table resource-${type}`}><thead><tr>{cols.map((c) => <th key={c}>{c}</th>)}<th></th></tr></thead><tbody>
     {type === 'expenses' && adding && <tr className="inline-row">
       <td>Today</td>
       <td>Me</td>
