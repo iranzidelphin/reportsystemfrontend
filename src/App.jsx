@@ -10,6 +10,7 @@ import api, { API_BASE_URL } from './services/api'
 import './App.css'
 
 const money = (value) => new Intl.NumberFormat('en-US').format(Number(value || 0))
+const cashInFor = (row) => Number(row?.cashIn ?? (Number(row?.paidAmount || 0) - Number(row?.cashOut || 0)))
 const today = new Date().toISOString().slice(0, 10)
 const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
 const liveRefreshMs = 10 * 60 * 1000
@@ -30,6 +31,7 @@ const canManageAdmin = (user) => isAdmin(user)
 const emptyTransaction = {
   productName: '',
   paidAmount: '',
+  cashOut: '',
   remainingAmount: '',
   paymentMethod: 'CASH',
   description: '',
@@ -171,14 +173,19 @@ function TransactionTable({ rows = [], loading, error, adding = false, draft = e
   const [editing, setEditing] = useState(false)
   const totals = rows.reduce((sum, row) => ({
     paidAmount: sum.paidAmount + Number(row.paidAmount || 0),
+    cashOut: sum.cashOut + Number(row.cashOut || 0),
+    cashIn: sum.cashIn + cashInFor(row),
     remainingAmount: sum.remainingAmount + Number(row.remainingAmount || 0),
-  }), { paidAmount: 0, remainingAmount: 0 })
+  }), { paidAmount: 0, cashOut: 0, cashIn: 0, remainingAmount: 0 })
+  const draftCashIn = cashInFor(draft)
+  const editCashIn = cashInFor(editDraft)
   const canChangeRows = Boolean(onUpdate || onDelete)
   const startEdit = (row) => {
     setEditingId(row._id)
     setEditDraft({
       productName: row.productOrService || row.serviceOrProduct || '',
       paidAmount: row.paidAmount ?? '',
+      cashOut: row.cashOut ?? '',
       remainingAmount: row.remainingAmount ?? '',
       paymentMethod: row.paymentMethod || 'CASH',
       description: row.notes || '',
@@ -196,24 +203,28 @@ function TransactionTable({ rows = [], loading, error, adding = false, draft = e
   }
 
   return <div className="table-wrap"><table className="transaction-table">
-    <thead><tr><th>Date</th><th>User</th><th>Product name</th><th>Paid</th><th>Rest</th><th>Method</th><th>Description</th><th></th></tr></thead>
+    <thead><tr><th>Date</th><th>User</th><th>Product name</th><th>Amount</th><th>Cash Out</th><th>Cash In</th><th>Rest</th><th>Method</th><th>Description</th><th></th></tr></thead>
     <tbody>
       {adding && <tr className="inline-row">
         <td>Today</td>
         <td>Me</td>
         <td><input required value={draft.productName} onChange={(e) => setDraft({ ...draft, productName: e.target.value })} placeholder="Product name" /></td>
         <td><input required min="0" type="number" value={draft.paidAmount} onChange={(e) => setDraft({ ...draft, paidAmount: e.target.value })} placeholder="0" /></td>
+        <td><input required min="0" type="number" value={draft.cashOut} onChange={(e) => setDraft({ ...draft, cashOut: e.target.value })} placeholder="0" /></td>
+        <td>{money(draftCashIn)} <small>RWF</small></td>
         <td><input required min="0" type="number" value={draft.remainingAmount} onChange={(e) => setDraft({ ...draft, remainingAmount: e.target.value })} placeholder="0" /></td>
         <td><Select value={draft.paymentMethod} onChange={(paymentMethod) => setDraft({ ...draft, paymentMethod })} /></td>
         <td><input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Optional" /></td>
         <td className="row-buttons"><button className="button" onClick={onSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button><button className="button secondary" onClick={onCancel}>Cancel</button></td>
       </tr>}
-      <TableState loading={loading} error={error} empty={!rows.length && !adding} colSpan={8} />
+      <TableState loading={loading} error={error} empty={!rows.length && !adding} colSpan={10} />
       {rows.map((t) => editingId === t._id ? <tr key={t._id} className="inline-row">
         <td>{new Date(t.saleDate || t.transactionDate || t.createdAt).toLocaleDateString()}</td>
         <td>{t.staff?.fullName || t.staff?.name || t.createdBy?.fullName || t.createdBy?.name || '-'}</td>
         <td><input required value={editDraft.productName} onChange={(e) => setEditDraft({ ...editDraft, productName: e.target.value })} /></td>
         <td><input required min="0" type="number" value={editDraft.paidAmount} onChange={(e) => setEditDraft({ ...editDraft, paidAmount: e.target.value })} /></td>
+        <td><input required min="0" type="number" value={editDraft.cashOut} onChange={(e) => setEditDraft({ ...editDraft, cashOut: e.target.value })} /></td>
+        <td>{money(editCashIn)} <small>RWF</small></td>
         <td><input required min="0" type="number" value={editDraft.remainingAmount} onChange={(e) => setEditDraft({ ...editDraft, remainingAmount: e.target.value })} /></td>
         <td><Select value={editDraft.paymentMethod} onChange={(paymentMethod) => setEditDraft({ ...editDraft, paymentMethod })} /></td>
         <td><input value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} /></td>
@@ -223,12 +234,14 @@ function TransactionTable({ rows = [], loading, error, adding = false, draft = e
         <td>{t.staff?.fullName || t.staff?.name || t.createdBy?.fullName || t.createdBy?.name || '-'}</td>
         <td><strong>{t.productOrService || t.serviceOrProduct}</strong></td>
         <td>{money(t.paidAmount)} <small>RWF</small></td>
+        <td>{money(t.cashOut)} <small>RWF</small></td>
+        <td>{money(cashInFor(t))} <small>RWF</small></td>
         <td>{money(t.remainingAmount)} <small>RWF</small></td>
         <td>{t.paymentMethod === 'MOMO' ? 'MoMo Pay' : 'Cash'}</td>
         <td>{t.notes || '-'}</td>
         <td>{canChangeRows && <><button className="row-action" onClick={() => startEdit(t)}><Edit2 size={16} /></button><button className="row-action" onClick={() => confirmDelete() && onDelete?.(t._id)}><Trash2 size={16} /></button></>}</td>
       </tr>)}
-      <tr className="total-row"><td colSpan="3">Total</td><td>{money(totals.paidAmount)} <small>RWF</small></td><td>{money(totals.remainingAmount)} <small>RWF</small></td><td colSpan="3"></td></tr>
+      <tr className="total-row"><td colSpan="3">Total</td><td>{money(totals.paidAmount)} <small>RWF</small></td><td>{money(totals.cashOut)} <small>RWF</small></td><td>{money(totals.cashIn)} <small>RWF</small></td><td>{money(totals.remainingAmount)} <small>RWF</small></td><td colSpan="3"></td></tr>
     </tbody>
   </table></div>
 }
@@ -248,16 +261,20 @@ function Dashboard({ auth }) {
   const recent = useApi('/transactions', { params: { ...range, limit: 5, refresh }, initial: [], refreshMs: liveRefreshMs })
   const stock = useApi('/expenses', { params: { ...range, refresh }, initial: [], refreshMs: liveRefreshMs })
   const data = summary.data || {}
-  const paid = data.totalPaid || data.paidAmount || 0
+  const amount = data.totalAmount || data.totalPaid || data.paidAmount || 0
+  const cashOut = data.totalCashOut || 0
+  const cashIn = data.totalCashIn ?? data.totalMoneyEarned ?? amount - cashOut
   const unpaid = data.totalRemaining || data.notPaid || 0
   const imported = (stock.data || []).reduce((sum, row) => sum + Number(row.amount || 0), 0)
-  const pie = [{ name: 'Earned', value: paid, color: '#246bfd' }, { name: 'Remaining', value: unpaid, color: '#f3ae35' }]
+  const pie = [{ name: 'Cash In', value: cashIn, color: '#246bfd' }, { name: 'Remaining', value: unpaid, color: '#f3ae35' }]
 
   return <AppShell title="Dashboard" auth={auth}><div className="page-content">
     <DateControls range={range} setRange={setRange} />
     {summary.error && <Notice tone="error">{summary.error}</Notice>}
     <div className="stat-grid">{[
-      [CircleDollarSign, 'Money earned', money(paid), 'RWF', 'Today and selected dates', 'green'],
+      [CircleDollarSign, 'Amount', money(amount), 'RWF', 'Customer payments', 'green'],
+      [Wallet, 'Cash Out', money(cashOut), 'RWF', 'Service/product costs', 'orange'],
+      [CircleDollarSign, 'Cash In', money(cashIn), 'RWF', 'Amount minus Cash Out', 'blue'],
       [Wallet, 'Amount rest', money(unpaid), 'RWF', 'Remaining money', 'orange'],
       [ClipboardList, 'Transactions', data.transactionCount || 0, '', 'Selected period', 'purple'],
       [Package, 'Imported stock', money(imported), 'RWF', 'Selected period', 'blue'],
@@ -268,7 +285,7 @@ function Dashboard({ auth }) {
       <Card className="recent"><SectionTitle title="Recent transactions" text="Latest sales activity" link="/transactions" /><TransactionTable rows={recent.data || []} loading={recent.loading} error={recent.error} onUpdate={updateTransaction} onDelete={deleteTransaction} /></Card>
       <Card className="payment-card">
         <div className="section-title"><div><h2>Payment summary</h2><p>Selected period</p></div></div>
-        <div className="chart"><ResponsiveContainer width="100%" height={180}><PieChart><Pie data={pie} dataKey="value" innerRadius={52} outerRadius={72} paddingAngle={4} stroke="none">{pie.map((x) => <Cell key={x.name} fill={x.color} />)}</Pie><Tooltip formatter={(v) => `${money(v)} RWF`} /></PieChart></ResponsiveContainer><div className="chart-total"><strong>{money(paid)}</strong><span>Earned</span></div></div>
+        <div className="chart"><ResponsiveContainer width="100%" height={180}><PieChart><Pie data={pie} dataKey="value" innerRadius={52} outerRadius={72} paddingAngle={4} stroke="none">{pie.map((x) => <Cell key={x.name} fill={x.color} />)}</Pie><Tooltip formatter={(v) => `${money(v)} RWF`} /></PieChart></ResponsiveContainer><div className="chart-total"><strong>{money(cashIn)}</strong><span>Cash In</span></div></div>
         <div className="legend">{pie.map((x) => <div key={x.name}><i style={{ background: x.color }} /><span>{x.name}</span><strong>{money(x.value)} RWF</strong></div>)}</div>
       </Card>
     </div>
@@ -366,7 +383,9 @@ function NewTransaction({ auth }) {
       <form onSubmit={submit}>
         <div className="form-grid">
           <Field label="Product name"><input required value={form.productName} onChange={(e) => setForm({ ...form, productName: e.target.value })} /></Field>
-          <Field label="Amount paid"><input required min="0" type="number" value={form.paidAmount} onChange={(e) => setForm({ ...form, paidAmount: e.target.value })} /></Field>
+          <Field label="Amount"><input required min="0" type="number" value={form.paidAmount} onChange={(e) => setForm({ ...form, paidAmount: e.target.value })} /></Field>
+          <Field label="Cash Out"><input required min="0" type="number" value={form.cashOut} onChange={(e) => setForm({ ...form, cashOut: e.target.value })} /></Field>
+          <Field label="Cash In"><input readOnly value={money(cashInFor(form))} /></Field>
           <Field label="Amount rest"><input required min="0" type="number" value={form.remainingAmount} onChange={(e) => setForm({ ...form, remainingAmount: e.target.value })} /></Field>
           <Field label="Payment method"><Select value={form.paymentMethod} onChange={(paymentMethod) => setForm({ ...form, paymentMethod })} /></Field>
           <Field label="Description"><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
@@ -431,7 +450,7 @@ function ReportsPage({ auth }) {
     <Card className="page-hero"><div><p className="eyebrow">REPORTING</p><h2>Daily reports</h2><p>Totals update automatically from saved transactions.</p></div><div className="hero-buttons"><button className="button" onClick={downloadReport}>Download report</button></div></Card>
     <DateControls range={range} setRange={setRange} compact />
     <div className="stat-grid report-stats">{[
-      ['Total money earned', data.totalMoneyEarned ?? data.totalPaid], ['Total remaining money', data.totalRemainingMoney ?? data.totalRemaining], ['Cash received', data.totalCash], ['MoMo Pay received', data.totalMomo],
+      ['Total amount', data.totalAmount ?? data.totalPaid], ['Total Cash Out', data.totalCashOut], ['Total Cash In', data.totalCashIn ?? data.totalMoneyEarned], ['Total remaining money', data.totalRemainingMoney ?? data.totalRemaining], ['Cash received', data.totalCash], ['MoMo Pay received', data.totalMomo],
     ].map(([label, value]) => <Card className="stat-card" key={label}><p>{label}</p><h2>{money(value)} <small>RWF</small></h2></Card>)}</div>
     <Card className="recent"><SectionTitle title="Sales report" text="Transactions for the selected device date" action={<button className="button" onClick={() => setAdding(true)}><Plus size={16} /> Add row</button>} /><TransactionTable rows={data.transactions || []} loading={report.loading} error={report.error} adding={adding} draft={draft} setDraft={setDraft} onSave={saveRow} onCancel={() => { setAdding(false); setDraft(emptyTransaction) }} saving={saving} onUpdate={updateTransaction} onDelete={deleteTransaction} /></Card>
   </div></AppShell>
