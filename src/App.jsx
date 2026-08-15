@@ -27,6 +27,12 @@ const isAdmin = (user) => ['ADMIN', 'OWNER'].includes(user?.role)
 const isManager = (user) => user?.role === 'MANAGER'
 const canManageBusiness = (user) => isAdmin(user) || isManager(user)
 const canManageAdmin = (user) => isAdmin(user)
+const idOf = (value) => String(value?._id || value?.id || value || '')
+const isOwnTransaction = (row, user) => {
+  const userId = idOf(user)
+  return userId && [row?.createdBy, row?.staff].some((owner) => idOf(owner) === userId)
+}
+const isOwnRow = (row, user) => idOf(user) && idOf(row?.createdBy) === idOf(user)
 
 const emptyTransaction = {
   productName: '',
@@ -167,7 +173,7 @@ function TableState({ loading, error, empty, colSpan = 7 }) {
   return null
 }
 
-function TransactionTable({ rows = [], loading, error, adding = false, draft = emptyTransaction, setDraft, onSave, onCancel, saving = false, onUpdate, onDelete }) {
+function TransactionTable({ rows = [], loading, error, adding = false, draft = emptyTransaction, setDraft, onSave, onCancel, saving = false, onUpdate, onDelete, currentUser }) {
   const [editingId, setEditingId] = useState('')
   const [editDraft, setEditDraft] = useState(emptyTransaction)
   const [editing, setEditing] = useState(false)
@@ -239,7 +245,7 @@ function TransactionTable({ rows = [], loading, error, adding = false, draft = e
         <td>{money(t.remainingAmount)} <small>RWF</small></td>
         <td>{t.paymentMethod === 'MOMO' ? 'MoMo Pay' : 'Cash'}</td>
         <td>{t.notes || '-'}</td>
-        <td>{canChangeRows && <><button className="row-action" onClick={() => startEdit(t)}><Edit2 size={16} /></button><button className="row-action" onClick={() => confirmDelete() && onDelete?.(t._id)}><Trash2 size={16} /></button></>}</td>
+        <td>{canChangeRows && isOwnTransaction(t, currentUser) && <><button className="row-action" onClick={() => startEdit(t)}><Edit2 size={16} /></button><button className="row-action" onClick={() => confirmDelete() && onDelete?.(t._id)}><Trash2 size={16} /></button></>}</td>
       </tr>)}
       <tr className="total-row"><td colSpan="3">Total</td><td>{money(totals.paidAmount)} <small>RWF</small></td><td>{money(totals.cashOut)} <small>RWF</small></td><td>{money(totals.cashIn)} <small>RWF</small></td><td>{money(totals.remainingAmount)} <small>RWF</small></td><td colSpan="3"></td></tr>
     </tbody>
@@ -282,7 +288,7 @@ function Dashboard({ auth }) {
       <div className={'stat-icon ' + color}><Icon size={20} /></div><p>{label}</p><h2>{value} <small>{unit}</small></h2><span className="change">{note}</span>
     </Card>)}</div>
     <div className="dashboard-grid">
-      <Card className="recent"><SectionTitle title="Recent transactions" text="Latest sales activity" link="/transactions" /><TransactionTable rows={recent.data || []} loading={recent.loading} error={recent.error} onUpdate={updateTransaction} onDelete={deleteTransaction} /></Card>
+      <Card className="recent"><SectionTitle title="Recent transactions" text="Latest sales activity" link="/transactions" /><TransactionTable rows={recent.data || []} loading={recent.loading} error={recent.error} onUpdate={updateTransaction} onDelete={deleteTransaction} currentUser={auth.user} /></Card>
       <Card className="payment-card">
         <div className="section-title"><div><h2>Payment summary</h2><p>Selected period</p></div></div>
         <div className="chart"><ResponsiveContainer width="100%" height={180}><PieChart><Pie data={pie} dataKey="value" innerRadius={52} outerRadius={72} paddingAngle={4} stroke="none">{pie.map((x) => <Cell key={x.name} fill={x.color} />)}</Pie><Tooltip formatter={(v) => `${money(v)} RWF`} /></PieChart></ResponsiveContainer><div className="chart-total"><strong>{money(cashIn)}</strong><span>Cash In</span></div></div>
@@ -356,7 +362,7 @@ function TransactionsPage({ auth }) {
   return <AppShell title="Transactions" auth={auth}><div className="page-content">
     <Hero title="Transactions" text="Record and review customer sales." action="/transactions/new" actionText="New transaction" />
     <DateControls range={range} setRange={setRange} compact />
-    <Card className="recent"><SectionTitle title="All transactions" text="Showing records from your selected period" /><TransactionTable rows={list.data || []} loading={list.loading} error={list.error} onUpdate={updateTransaction} onDelete={deleteTransaction} /></Card>
+    <Card className="recent"><SectionTitle title="All transactions" text="Showing records from your selected period" /><TransactionTable rows={list.data || []} loading={list.loading} error={list.error} onUpdate={updateTransaction} onDelete={deleteTransaction} currentUser={auth.user} /></Card>
   </div></AppShell>
 }
 
@@ -452,7 +458,7 @@ function ReportsPage({ auth }) {
     <div className="stat-grid report-stats">{[
       ['Total amount', data.totalAmount ?? data.totalPaid], ['Total Cash Out', data.totalCashOut], ['Total Cash In', data.totalCashIn ?? data.totalMoneyEarned], ['Total remaining money', data.totalRemainingMoney ?? data.totalRemaining], ['Cash received', data.totalCash], ['MoMo Pay received', data.totalMomo],
     ].map(([label, value]) => <Card className="stat-card" key={label}><p>{label}</p><h2>{money(value)} <small>RWF</small></h2></Card>)}</div>
-    <Card className="recent"><SectionTitle title="Sales report" text="Transactions for the selected device date" action={<button className="button" onClick={() => setAdding(true)}><Plus size={16} /> Add row</button>} /><TransactionTable rows={data.transactions || []} loading={report.loading} error={report.error} adding={adding} draft={draft} setDraft={setDraft} onSave={saveRow} onCancel={() => { setAdding(false); setDraft(emptyTransaction) }} saving={saving} onUpdate={updateTransaction} onDelete={deleteTransaction} /></Card>
+    <Card className="recent"><SectionTitle title="Sales report" text="Transactions for the selected device date" action={<button className="button" onClick={() => setAdding(true)}><Plus size={16} /> Add row</button>} /><TransactionTable rows={data.transactions || []} loading={report.loading} error={report.error} adding={adding} draft={draft} setDraft={setDraft} onSave={saveRow} onCancel={() => { setAdding(false); setDraft(emptyTransaction) }} saving={saving} onUpdate={updateTransaction} onDelete={deleteTransaction} currentUser={auth.user} /></Card>
   </div></AppShell>
 }
 
@@ -545,7 +551,7 @@ function ResourcePage({ auth, type, title }) {
     {type === 'expenses' && <DateControls range={range} setRange={setRange} compact />}
     {message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
     {type === 'users' && <Card className="form-card compact-form"><SectionTitle title={editingId ? 'Edit user' : 'Add user'} text="Username, phone number, and PIN only." /><form onSubmit={submit}><ResourceFields type={type} form={form} setForm={setForm} editing={Boolean(editingId)} /><div className="form-actions">{editingId && <button type="button" className="button secondary" onClick={() => { setEditingId(''); setForm({}) }}>Cancel edit</button>}<button className="button" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button></div></form></Card>}
-    <Card className="recent"><SectionTitle title={`All ${title.toLowerCase()}`} text={type === 'expenses' ? 'Inventory purchases' : 'Live records from MongoDB'} action={type === 'expenses' && <button className="button" onClick={() => setAddingRow(true)}><Plus size={16} /> Add row</button>} /><ResourceTable type={type} rows={data || []} loading={(type === 'logs' ? resource : list).loading} error={(type === 'logs' ? resource : list).error} onDelete={remove} onEdit={type === 'expenses' ? undefined : edit} onUpdate={type === 'expenses' ? updateStockRow : undefined} adding={addingRow} draft={rowDraft} setDraft={setRowDraft} onSave={saveStockRow} onCancel={() => { setAddingRow(false); setRowDraft(emptyStock) }} saving={saving} /></Card>
+    <Card className="recent"><SectionTitle title={`All ${title.toLowerCase()}`} text={type === 'expenses' ? 'Inventory purchases' : 'Live records from MongoDB'} action={type === 'expenses' && <button className="button" onClick={() => setAddingRow(true)}><Plus size={16} /> Add row</button>} /><ResourceTable type={type} rows={data || []} loading={(type === 'logs' ? resource : list).loading} error={(type === 'logs' ? resource : list).error} onDelete={remove} onEdit={type === 'expenses' ? undefined : edit} onUpdate={type === 'expenses' ? updateStockRow : undefined} adding={addingRow} draft={rowDraft} setDraft={setRowDraft} onSave={saveStockRow} onCancel={() => { setAddingRow(false); setRowDraft(emptyStock) }} saving={saving} currentUser={auth.user} /></Card>
   </div></AppShell>
 }
 
@@ -562,7 +568,7 @@ function ResourceFields({ type, form, setForm, editing = false }) {
   return <div className="form-grid"><Field label="Username"><input required value={form.username || ''} onChange={(e) => set('username', e.target.value)} /></Field><Field label="Phone number"><input required inputMode="numeric" value={form.phoneNumber || ''} onChange={(e) => set('phoneNumber', e.target.value.replace(/\D/g, '').slice(0, 10))} /></Field><Field label="PIN"><input required={!editing} inputMode="numeric" maxLength="4" pattern="[0-9]*" type="password" value={form.pin || ''} onChange={(e) => set('pin', e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field></div>
 }
 
-function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUpdate, adding = false, draft = emptyStock, setDraft, onSave, onCancel, saving = false }) {
+function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUpdate, adding = false, draft = emptyStock, setDraft, onSave, onCancel, saving = false, currentUser }) {
   const [editingId, setEditingId] = useState('')
   const [editDraft, setEditDraft] = useState(emptyStock)
   const [editing, setEditing] = useState(false)
@@ -603,7 +609,7 @@ function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUp
       <td><input required min="1" type="number" value={editDraft.amount} onChange={(e) => setEditDraft({ ...editDraft, amount: e.target.value })} /></td>
       <td><Select value={editDraft.paymentMethod} onChange={(paymentMethod) => setEditDraft({ ...editDraft, paymentMethod })} /></td>
       <td className="row-buttons"><button className="button" onClick={saveStockEdit} disabled={editing}>{editing ? 'Saving...' : 'Save'}</button><button className="button secondary" onClick={() => setEditingId('')}>Cancel</button></td>
-    </tr> : <tr key={row._id}>{resourceCells(type, row).map((cell, i) => <td key={i}>{cell}</td>)}<td>{type === 'expenses' && onUpdate && <button className="row-action" onClick={() => startStockEdit(row)}><Edit2 size={16} /></button>}{type === 'users' && onEdit && <button className="row-action" onClick={() => onEdit(row)}><Edit2 size={16} /></button>}{type !== 'logs' && onDelete && <button className="row-action" onClick={() => confirmDelete() && onDelete(row._id)}><Trash2 size={16} /></button>}</td></tr>)}
+    </tr> : <tr key={row._id}>{resourceCells(type, row).map((cell, i) => <td key={i}>{cell}</td>)}<td>{type === 'expenses' && onUpdate && isOwnRow(row, currentUser) && <button className="row-action" onClick={() => startStockEdit(row)}><Edit2 size={16} /></button>}{type === 'users' && onEdit && <button className="row-action" onClick={() => onEdit(row)}><Edit2 size={16} /></button>}{type !== 'logs' && onDelete && (type !== 'expenses' || isOwnRow(row, currentUser)) && <button className="row-action" onClick={() => confirmDelete() && onDelete(row._id)}><Trash2 size={16} /></button>}</td></tr>)}
     {type === 'expenses' && <tr className="total-row"><td colSpan="3">Total</td><td>{money(stockTotal)} <small>RWF</small></td><td colSpan="2"></td></tr>}
   </tbody></table></div>
 }
