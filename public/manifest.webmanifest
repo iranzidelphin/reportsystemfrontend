@@ -1,6 +1,6 @@
 {
-  "name": "Shop Report System",
-  "short_name": "Shop Report",
+  "name": "manageyourstock",
+  "short_name": "manageyourstock",
   "description": "Sales, reports, and imported stock tracking.",
   "start_url": "/#/dashboard",
   "scope": "/",

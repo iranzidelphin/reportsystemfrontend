@@ -1,11 +1,13 @@
 import axios from 'axios'
 
-const configuredApiUrl = import.meta.env.VITE_API_URL
-  || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://reportsystembackend.onrender.com/api')
+const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim()
+  || (isLocalHost ? 'http://localhost:5000/api' : 'https://reportsystembackend.onrender.com/api')
 
-export const API_BASE_URL = configuredApiUrl.replace(/\/+$/, '').endsWith('/api')
-  ? configuredApiUrl.replace(/\/+$/, '')
-  : `${configuredApiUrl.replace(/\/+$/, '')}/api`
+const normalizedApiUrl = configuredApiUrl.replace(/\/+$/, '')
+export const API_BASE_URL = normalizedApiUrl.endsWith('/api')
+  ? normalizedApiUrl
+  : `${normalizedApiUrl}/api`
 
 const api = axios.create({
   baseURL: API_BASE_URL,

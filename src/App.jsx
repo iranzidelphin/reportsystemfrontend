@@ -1,12 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
-import { HashRouter, NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+﻿import { cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { HashRouter, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
   BarChart3, Bell, CalendarDays, ChevronDown, CircleDollarSign, ClipboardList,
-  Edit2, LayoutDashboard, LogOut, Menu, Package, Plus, ReceiptText, Search,
-  Trash2, Users, Wallet, X,
+  Edit2, LogOut, Menu, Package, Plus, ReceiptText, Search,
+  Trash2, Users, Wallet, X, Boxes, LayoutGrid, ShoppingCart, RotateCcw,
+  RefreshCw, Grid2X2, List, Eye, Copy,
+  FileText, UserRound, CircleUserRound, Building2, Settings, LockKeyhole, Pencil,
 } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import api, { API_BASE_URL } from './services/api'
+import { clearPrivateData, getOfflineAccount, rememberOfflineAccount, verifyOfflinePin, offlineDb, cacheSalesHistory } from './offline/db'
+import { OfflineSyncProvider, OfflineSyncStatus } from './offline/OfflineSyncProvider'
+import { useOfflineSync } from './offline/OfflineSyncContext'
 import './App.css'
 
 const money = (value) => new Intl.NumberFormat('en-US').format(Number(value || 0))
@@ -14,15 +19,89 @@ const cashInFor = (row) => Number(row?.cashIn ?? (Number(row?.paidAmount || 0) -
 const today = new Date().toISOString().slice(0, 10)
 const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
 const liveRefreshMs = 10 * 60 * 1000
+const PreferencesContext = createContext({ language: 'en', theme: 'light', setLanguage: () => {}, setTheme: () => {}, t: (text) => text })
+const translations = {
+  rw: {
+    Dashboard: 'Imbonerahamwe', STOCK: 'UBUBIKO', 'All Products': 'Ibicuruzwa byose', 'Sold Products': 'Ibicuruzwa byagurishijwe', Reports: 'Raporo', 'Record Sale': 'Andika igurisha', 'Add Product': 'Ongeramo igicuruzwa', ACCOUNT: 'KONTI', 'Account Information': 'Amakuru ya konti', 'Manage Branches': 'Genzura amashami', Users: 'Abakoresha', Settings: 'Igenamiterere', Logout: 'Sohoka', Overview: 'Incamake', Products: 'Ibicuruzwa', 'Add New Product': 'Ongeramo igicuruzwa gishya', Transactions: 'Ibikorwa', 'Record Product Sale': 'Andika igicuruzwa cyagurishijwe', 'Users management': 'Imicungire y’abakoresha', 'Review workspace preferences.': 'Reba igenamiterere ry’aho mukorera.', Currency: 'Ifaranga', Workspace: 'Ahakorerwa', 'Shop settings': 'Igenamiterere ry’iduka', Language: 'Ururimi', Appearance: 'Imigaragarire', Light: 'Umucyo', Dark: 'Umwijima', English: 'Icyongereza', Kinyarwanda: 'Ikinyarwanda',
+    'BUSINESS WORKSPACE': 'AHO UBUCURUZI BUKORERA', 'Search products... (Ctrl+K)': 'Shakisha ibicuruzwa... (Ctrl+K)', 'Ctrl K': 'Ctrl K', 'From date': 'Guhera ku itariki', 'To date': 'Kugeza ku itariki', 'This month': 'Uku kwezi', Search: 'Shakisha', 'Loading records...': 'Birimo gupakurura inyandiko...', 'No records found.': 'Nta nyandiko zabonetse.', Date: 'Itariki', User: 'Umukoresha', 'Product name': 'Izina ry’igicuruzwa', Amount: 'Amafaranga', 'Cash Out': 'Amafaranga yasohotse', 'Cash In': 'Amafaranga yinjiye', Rest: 'Asigaye', Method: 'Uburyo', Description: 'Ibisobanuro', Today: 'Uyu munsi', Me: 'Jyewe', Optional: 'Si ngombwa', Saving: 'Birimo kubikwa...', Save: 'Bika', Cancel: 'Kureka', Total: 'Igiteranyo', 'MoMo Pay': 'MoMo Pay', Cash: 'Amafaranga', 'Are you sure you want to delete this row?': 'Urashaka koko gusiba iyi nyandiko?',
+    Amount: 'Amafaranga', 'Cash Out': 'Amafaranga yasohotse', 'Cash In': 'Amafaranga yinjiye', 'Amount rest': 'Amafaranga asigaye', Transactions: 'Ibikorwa', 'Imported stock': 'Ibicuruzwa byinjijwe mu bubiko', 'Customer payments': 'Amafaranga y’abakiriya', 'Service/product costs': 'Ikiguzi cya serivisi/ibicuruzwa', 'Amount minus Cash Out': 'Amafaranga asigaye nyuma yo gukuramo ayasohotse', 'Remaining money': 'Amafaranga asigaye', 'Selected period': 'Igihe cyatoranyijwe', 'Recent transactions': 'Ibikorwa biheruka', 'Latest sales activity': 'Ibyagurishijwe vuba', 'Payment summary': 'Incamake y’ubwishyu', 'Low stock products': 'Ibicuruzwa biri hafi gushira', 'Products at or below their alert level': 'Ibicuruzwa biri ku mubare w’impuruza cyangwa munsi yawo', 'Recent imported stock': 'Ibicuruzwa biheruka kwinjizwa', 'Latest inventory purchases by all users': 'Ibicuruzwa biheruka kugurwa n’abakoresha bose', 'Quick actions': 'Ibikorwa byihuse', 'Work faster': 'Kora vuba', 'New transaction': 'Igikorwa gishya', 'New product': 'Igicuruzwa gishya', 'View reports': 'Reba raporo', 'View all': 'Reba byose',
+    Management: 'Imicungire', MANAGEMENT: 'IMICUNGIRE', Reporting: 'Raporo', REPORTING: 'RAPORO', 'Daily reports': 'Raporo za buri munsi', 'Totals update automatically from saved transactions.': 'Ibyegeranyo bivugururwa byikora hashingiwe ku bikorwa byabitswe.', 'Download report': 'Manura raporo', 'Total amount': 'Amafaranga yose', 'Total Cash Out': 'Amafaranga yose yasohotse', 'Total Cash In': 'Amafaranga yose yinjiye', 'Total remaining money': 'Amafaranga yose asigaye', 'Cash received': 'Amafaranga yakiriwe', 'MoMo Pay received': 'Amafaranga yakiriwe kuri MoMo', 'Current stock value': 'Agaciro k’ibiri mu bubiko', 'Best-selling products': 'Ibicuruzwa byagurishijwe cyane', 'Ranked by quantity sold in the selected period': 'Bishyizwe ku rutonde hakurikijwe ingano yagurishijwe mu gihe cyatoranyijwe', Product: 'Igicuruzwa', SKU: 'Kode ya SKU', 'Quantity sold': 'Umubare wagurishijwe', Sales: 'Ibyagurishijwe', 'No product sales for this period.': 'Nta bicuruzwa byagurishijwe muri iki gihe.', 'Sales report': 'Raporo y’ibyagurishijwe', 'Transactions for the selected device date': 'Ibikorwa byo ku matariki yatoranyijwe', 'Add row': 'Ongeraho umurongo',
+    'Record and review customer sales.': 'Andika kandi urebe ibyagurishijwe ku bakiriya.', 'Record sale': 'Andika igurisha', 'All transactions': 'Ibikorwa byose', 'Showing records from your selected period': 'Herekanywe inyandiko zo mu gihe wahisemo', 'Search by product, category, SKU, model...': 'Shakisha igicuruzwa, icyiciro, SKU cyangwa model...', 'All Branches': 'Amashami yose', 'All Categories': 'Ibyiciro byose', 'All Status': 'Imiterere yose', 'Loading sold products...': 'Birimo gupakurura ibyagurishijwe...', 'No sold products found.': 'Nta bicuruzwa byagurishijwe byabonetse.', 'Main Store': 'Ububiko bukuru', Quantity: 'Umubare', 'Unit Price': 'Igiciro kimwe', 'Purchase Cost': 'Ikiguzi cyo kugura', 'Total Revenue': 'Amafaranga yose yinjiye', 'Profits: ': 'Inyungu: ', 'Customer: ': 'Umukiriya: ', 'Delete sale and restore stock': 'Siba igurisha kandi usubize ibicuruzwa mu bubiko', 'Showing ': 'Herekanywe ', ' to ': ' kugeza ', ' of ': ' muri ', ' sales records': ' inyandiko z’igurisha', 'Previous': 'Ibanjirije', Next: 'Ikurikira',
+    'Customer (Name, Phone, or TIN Number)': 'Umukiriya (Amazina, telefone cyangwa TIN)', 'Payment Type': 'Uburyo bwo kwishyura', 'Fill in customer and payment type, add items to list, and click Record Sale.': 'Andika umukiriya n’uburyo bwo kwishyura, wongere ibicuruzwa ku rutonde, ukande Andika igurisha.', 'View All Sold Products': 'Reba ibicuruzwa byose byagurishijwe', 'Sale item list': 'Urutonde rw’ibicuruzwa bigurishwa', ' Item Line(s)': ' umurongo w’igicuruzwa', 'Item name': 'Izina ry’igicuruzwa', Package: 'Gipaki', 'No matching products.': 'Nta bicuruzwa bihuye n’ishakisha.', 'Only ': 'Hafi ', ' in stock.': ' biri mu bubiko.', 'In stock: ': 'Mu bubiko: ', 'Record Sale': 'Andika igurisha', 'Recently Sold Products Data': 'Amakuru y’ibicuruzwa biheruka kugurishwa', Refresh: 'Ongera uvugurure', Payment: 'Ubwishyu',
+    'Register New Stock Product': 'Andika igicuruzwa gishya mu bubiko', 'Fill in product details to register new inventory stock.': 'Uzuza amakuru y’igicuruzwa kugira ngo ukibike mu bubiko.', 'Back to Products': 'Subira ku bicuruzwa', 'PRODUCT INFORMATION': 'AMAKURU Y’IGICURUZWA', 'SKU / Product code': 'SKU / Kode y’igicuruzwa', 'Optional unique code': 'Kode yihariye (si ngombwa)', Category: 'Icyiciro', Brand: 'Ikirango', Model: 'Model', 'STOCK AND PRICING': 'UBUBIKO N’IBICIRO', Unit: 'Igipimo', 'Purchase price (per unit)': 'Igiciro cyo kugura (kimwe)', 'Selling price (per unit)': 'Igiciro cyo kugurisha (kimwe)', 'This price is for all items combined (total cost)': 'Iki ni igiciro cy’ibicuruzwa byose hamwe', 'STORAGE AND SUPPLIER': 'AHO BIBIKWA N’UMUTANGA', 'Branch / storage location': 'Ishami / aho bibikwa', 'Supplier (name or phone number)': 'Umutanga (izina cyangwa telefone)', 'Shown when this product is chosen during a sale.': 'Bigaragara igihe iki gicuruzwa gihiswemo mu igurisha.', 'Cancel / Back': 'Kureka / Subira inyuma', 'Record New Product': 'Bika igicuruzwa gishya', 'Total Items': 'Ibintu byose', 'unique products': 'ibicuruzwa byihariye', Refresh: 'Ongera uvugurure', 'Record Sale': 'Andika igurisha', 'All Brands': 'Ibirango byose', 'All Statuses': 'Imiterere yose', 'Sort: Latest Added': 'Shungura: ibyongerewe vuba', 'Sort: Oldest Added': 'Shungura: ibyongerewe kera', 'Sort: Product Name': 'Shungura: izina ry’igicuruzwa', 'Out of Stock': 'Byashize mu bubiko', 'Low Stock': 'Bike mu bubiko', 'In Stock': 'Birahari mu bubiko', Inactive: 'Bidakora', Active: 'Birakora', Confirm: 'Emeza', Unconfirm: 'Kuraho iyemeza', Confirmed: 'Byemejwe', Yes: 'Yego', 'Price on Sale': 'Igiciro cyo kugurisha', 'Total Value': 'Agaciro kose', Edit: 'Hindura', Duplicate: 'Koporora', 'No products found.': 'Nta bicuruzwa byabonetse.', ' per page': ' kuri paji', Previous: 'Ibanjirije', 'Showing ': 'Herekanywe ', ' to ': ' kugeza ', ' of ': ' muri ', ' products': ' ibicuruzwa',
+    'Imported stock by selected date.': 'Ibicuruzwa byinjijwe ku itariki yatoranyijwe.', 'Username, phone number, and PIN only.': 'Izina ry’ukoresha, telefone na PIN gusa.', 'Edit user': 'Hindura umukoresha', 'Add user': 'Ongeraho umukoresha', Username: 'Izina ry’ukoresha', 'Phone number': 'Nimero ya telefone', PIN: 'PIN', 'Cancel edit': 'Kureka guhindura', 'All ': 'Byose ', 'Inventory purchases': 'Ibyaguzwe byo mu bubiko', 'Live records from MongoDB': 'Inyandiko ziri muri MongoDB', 'Imported stock saved.': 'Ibicuruzwa byinjijwe byabitswe.', 'Imported stock updated.': 'Ibicuruzwa byinjijwe bivuguruwe.', 'Saved successfully.': 'Byabitswe neza.', 'Created successfully.': 'Byaremwe neza.', 'Deleted successfully.': 'Byasibwe neza.', 'Unlinked import': 'Ibyinjijwe bitahujwe n’igicuruzwa', 'What imported': 'Ibyinjijwe', 'Payment method': 'Uburyo bwo kwishyura', 'No products are currently low on stock.': 'Nta bicuruzwa biri hafi gushira.', 'Low Stock · ': 'Bike mu bubiko · ',
+    'Review team activity across the system.': 'Reba ibikorwa by’itsinda muri sisitemu.', 'Manage ': 'Genzura ', ' from the live database.': ' muri data base.', 'Branch management': 'Imicungire y’amashami', 'Branch management is not configured for this workspace yet.': 'Imicungire y’amashami ntirashyirwa muri iyi sisitemu.', 'Account Information': 'Amakuru ya konti', 'View and update your profile details and settings.': 'Reba kandi uvugurure amakuru ya konti n’igenamiterere.', AVATAR: 'IFOTO', 'FIRST NAME': 'IZINA', 'LAST NAME': 'IZINA RY’UMURYANGO', GENDER: 'IGITSINA', EMAIL: 'IMELI', PHONE: 'TELEFONE', ROLE: 'URUHARE', 'Change Password': 'Hindura ijambo ry’ibanga', 'CURRENT PASSWORD': 'IJAMBO RY’IBANGA RYA KERA', 'NEW PASSWORD': 'IJAMBO RY’IBANGA RISHYA', 'CONFIRM NEW PASSWORD': 'SUBIRAMO IJAMBO RY’IBANGA RISHYA', 'Enter current password': 'Andika ijambo ry’ibanga rya kera', 'Enter new password': 'Andika ijambo ry’ibanga rishya', 'Confirm new password': 'Emeza ijambo ry’ibanga rishya', 'Update password': 'Vugurura ijambo ry’ibanga', 'Current workspace preferences': 'Igenamiterere ry’aho mukorera', 'Settings': 'Igenamiterere', 'Review workspace preferences.': 'Reba igenamiterere ry’aho mukorera.', Currency: 'Ifaranga', Workspace: 'Ahakorerwa', 'Shop settings': 'Igenamiterere ry’iduka', Language: 'Ururimi', Appearance: 'Imigaragarire', Light: 'Umucyo', Dark: 'Umwijima', English: 'Icyongereza', Kinyarwanda: 'Ikinyarwanda',
+    'Sign in': 'Injira', 'Enter your phone number and PIN.': 'Andika nimero ya telefone na PIN yawe.', 'Sign in securely': 'Injira mu buryo bwizewe', 'Signing in...': 'Birimo kwinjira...', 'Cannot reach the server at ': 'Ntibishobotse kugera kuri seriveri kuri ', '. Check the API URL and server connection, then try again.': '. Reba API URL n’ihuza rya seriveri, wongere ugerageze.', 'Something went wrong': 'Habaye ikibazo', 'Loading products...': 'Birimo gupakurura ibicuruzwa...', 'No product sales for this period.': 'Nta bicuruzwa byagurishijwe muri iki gihe.', 'No records found.': 'Nta nyandiko zabonetse.', 'No matching products.': 'Nta bicuruzwa bihuye n’ishakisha.', 'All transactions': 'Ibikorwa byose', 'Search products...': 'Shakisha ibicuruzwa...', 'Search by product, category, SKU, model...': 'Shakisha igicuruzwa, icyiciro, SKU cyangwa model...'
+  },
+}
 
-const navItems = [
-  ['Dashboard', '/dashboard', LayoutDashboard],
-  ['Transactions', '/transactions', ReceiptText],
-  ['Reports', '/reports', BarChart3],
-  ['Imported stock', '/expenses', Package],
-  ['Users', '/users', Users],
-]
+Object.assign(translations.rw, {
+  Online: 'Ifite interineti', Offline: 'Nta interineti', 'Last sync': 'Igihe iheruka guhuza', 'Not synced yet': 'Ntiyigeze ihuzwa', pending: 'bitegereje', conflicts: 'ibibazo',
+  'Saved on this device for 90 days.': 'Bibikwa kuri iki gikoresho mu gihe cy’iminsi 90.',
+  'The browser may clear locally stored records': 'Mucukumbuzi ishobora gusiba amakuru yabitswe kuri iki gikoresho', 'Local storage not persistent': 'Amakuru yo kuri iki gikoresho ashobora gusibangana',
+  'Syncing…': 'Birimo guhuza…', 'Sync now': 'Huza ubu', 'Hide queue': 'Hisha urutonde', 'View queue': 'Reba urutonde',
+  'Enter your PIN to sign in and sync': 'Andika PIN yawe kugira ngo winjire uhuze amakuru', 'Sign in and sync': 'Injira uhuze amakuru',
+  Sale: 'Igurisha', 'Stock import': 'Ibyinjijwe mu bubiko', 'Waiting to sync': 'Bitegereje guhuza', 'Needs attention': 'Bisaba kugenzurwa', Retry: 'Ongera ugerageze', Discard: 'Kuraho',
+  'Sync status': 'Imiterere yo guhuza', Pending: 'Bitegereje', Conflict: 'Ikibazo', Synced: 'Byahujwe',
+  category: 'icyiciro', brand: 'ikirango', model: 'model', unit: 'igipimo',
+  'All Payment Types': 'Ubwoko bwose bw’ubwishyu', Retry: 'Ongera ugerageze',
+  'Could not load products. Check your connection and try again.': 'Ntibyashobotse gupakurura ibicuruzwa. Reba ihuza wongere ugerageze.',
+  'No active products are available. Add a product before recording a sale.': 'Nta bicuruzwa bikora bihari. Banza wongere igicuruzwa mbere yo kwandika igurisha.',
+  'BUSINESS OVERVIEW': 'INSHAMAKE Y’UBUCURUZI', 'Stock and sales at a glance': 'Incamake y’ububiko n’ibyagurishijwe',
+  'Monitor cash flow, inventory levels, and recent activity.': 'Kurikirana amafaranga, urwego rw’ububiko n’ibikorwa biheruka.',
+  'Refresh dashboard': 'Vugurura incamake', 'Payments received': 'Amafaranga yakiriwe', 'Cash out': 'Amafaranga yasohotse',
+  'Net cash': 'Amafaranga asigaye', 'Outstanding balance': 'Umwenda usigaye', 'Sales recorded': 'Ibyagurishijwe byanditswe',
+  'Units in stock': 'Ibicuruzwa biri mu bubiko', 'Current stock value': 'Agaciro k’ibiri mu bubiko',
+  'Low / out of stock': 'Ibiri hafi gushira / ibyashize', 'Customer payments during selected period': 'Amafaranga y’abakiriya mu gihe cyatoranyijwe',
+  'Recorded expenses against sales': 'Amafaranga yasohotse ajyanye n’ibyagurishijwe', 'Payments received after cash out': 'Amafaranga asigaye nyuma y’ayavuyeho',
+  'Remaining customer balance': 'Amafaranga abakiriya basigaje kwishyura', 'During selected period': 'Mu gihe cyatoranyijwe',
+  'Quantity multiplied by cost price': 'Umubare wikubye n’igiciro cyo kugura', 'active products': 'ibicuruzwa bikora',
+  Select: 'Hitamo', Category: 'Icyiciro', Brand: 'Ikirango', Model: 'Model', Unit: 'Igipimo',
+  'Product name': 'Izina ry’igicuruzwa', 'Selling price': 'Igiciro cyo kugurisha',
+  'Cost price': 'Igiciro cyo kugura', 'Quantity in stock': 'Umubare uri mu bubiko', 'Low stock alert level': 'Umubare w’impuruza y’ibicuruzwa bike',
+  'Storage location': 'Aho kibitswe', Supplier: 'Umutanga', Status: 'Imiterere', Notes: 'Ibisobanuro', 'Model / description': 'Model / ibisobanuro',
+  'SKU / product code': 'SKU / kode y’igicuruzwa', 'Add product': 'Ongeramo igicuruzwa', 'Edit product': 'Hindura igicuruzwa',
+  'Search products or SKU...': 'Shakisha ibicuruzwa cyangwa SKU...', 'All locations': 'Ahantu hose', 'All stock levels': 'Imibare yose y’ububiko',
+  'All statuses': 'Imiterere yose', 'No products found.': 'Nta bicuruzwa byabonetse.', 'Select category': 'Hitamo icyiciro',
+  'Select brand': 'Hitamo ikirango', 'Select model': 'Hitamo model', '+ Add new': '+ Ongeraho gishya', 'Product added.': 'Igicuruzwa cyongeweho.',
+  'Product updated.': 'Igicuruzwa cyavuguruwe.', 'Product deleted.': 'Igicuruzwa cyasibwe.', 'Enter new category': 'Andika icyiciro gishya',
+  'Enter new brand': 'Andika ikirango gishya', 'Enter new model': 'Andika model nshya', 'Enter new location': 'Andika aho gishya kibikwa',
+  'Sale item list': 'Urutonde rw’ibicuruzwa bigurishwa', 'Item name': 'Izina ry’igicuruzwa', 'Payment Type': 'Uburyo bwo kwishyura',
+  'Search product by name, code, brand...': 'Shakisha igicuruzwa ukoresheje izina, kode cyangwa ikirango...',
+  'No matching products.': 'Nta bicuruzwa bihuye n’ishakisha.', 'Current stock': 'Umubare uri mu bubiko', 'Available quantity': 'Umubare uhari',
+  'Only ': 'Hafi ', ' in stock.': ' biri mu bubiko.', 'In stock: ': 'Mu bubiko: ',
+  'Out of Stock': 'Byashize mu bubiko', 'Low Stock': 'Bike mu bubiko', 'In Stock': 'Birahari mu bubiko',
+  'Product Name': 'Izina ry’igicuruzwa', Customer: 'Umukiriya', Code: 'Kode', Qty: 'Umubare', Profits: 'Inyungu', Payment: 'Ubwishyu',
+  'Mobile Money': 'Amafaranga kuri telefone', Card: 'Ikarita', Bank: 'Banki', Other: 'Ubundi', General: 'Rusange', Remove: 'Kuraho',
+  'Recording...': 'Birimo kwandika...', 'Record Sale': 'Andika igurisha', 'Total Revenue:': 'Amafaranga yose yinjiye:',
+  'Total Profits:': 'Inyungu zose:', 'Recently Sold Products Data': 'Amakuru y’ibicuruzwa biheruka kugurishwa',
+  'Download report': 'Manura raporo', 'Add row': 'Ongeraho umurongo', 'Imported item': 'Igicuruzwa cyinjijwe',
+  'Unlinked import': 'Ibyinjijwe bitahujwe n’igicuruzwa', 'What imported': 'Ibyinjijwe', 'Payment method': 'Uburyo bwo kwishyura',
+  'Enter 4-digit PIN': 'Andika PIN y’imibare 4', 'Phone number': 'Nimero ya telefone', PIN: 'PIN',
+  'This field is required.': 'Iki gice ni ngombwa.', 'SKU already exists.': 'Iyi SKU isanzwe ikoreshwa.',
+  'Product not found.': 'Igicuruzwa ntikibashije kuboneka.', 'Insufficient stock.': 'Ibicuruzwa biri mu bubiko ntibihagije.',
+  'Network Error': 'Ikibazo cy’ihuza rya interineti', 'Invalid credentials': 'Amakuru yo kwinjira si yo',
+  Branch: 'Ishami',
+  'Branch management': 'Imicungire y’amashami', 'Create branches and review each branch’s stock, sales, and imports.': 'Kora amashami kandi urebe ububiko, ibyagurishijwe n’ibyinjijwe muri buri shami.', 'Add branch': 'Ongeraho ishami', 'Edit branch': 'Hindura ishami', 'Branch records keep inventory and activity organized by location.': 'Amakuru y’ishami atunganya ububiko n’ibikorwa hakurikijwe aho biri.', 'Branch name *': 'Izina ry’ishami *', 'Branch code': 'Kode y’ishami', Address: 'Aderesi', Phone: 'Telefone', 'Branch manager': 'Umuyobozi w’ishami', 'Save branch': 'Bika ishami', 'Loading branches...': 'Birimo gupakurura amashami...', 'View branch': 'Reba ishami', Activate: 'Kora', Deactivate: 'Hagarika', Products: 'Ibicuruzwa', 'Stock units': 'Umubare uri mu bubiko', 'Stock value': 'Agaciro k’ububiko', 'Low stock': 'Ububiko buke', 'Sales records': 'Inyandiko z’igurisha', 'Products in this branch': 'Ibicuruzwa biri muri iri shami', 'Recent sales': 'Ibyagurishijwe biheruka', 'Recent imports': 'Ibyinjijwe biheruka', 'No branches found. Run the database migration to add the default branch, or add a branch.': 'Nta mashami ahari. Koresha migration ya data base kugira ngo wongere ishami risanzwe, cyangwa wongere irishya.', 'No products assigned to this branch.': 'Nta bicuruzwa byashyizwe muri iri shami.', 'No sales in this branch yet.': 'Nta byagurishijwe biraba muri iri shami.', 'No imports in this branch yet.': 'Nta byinjijwe biraba muri iri shami.', 'This branch still has products. Set it inactive to preserve its history.': 'Iri shami riracyafite ibicuruzwa. Rihagarike kugira ngo amateka yabyo agumane.', 'Select branch': 'Hitamo ishami', 'All Branches': 'Amashami yose',
+})
 
+function localizeNode(node, t) {
+  if (Array.isArray(node)) return node.map((child) => localizeNode(child, t))
+  if (typeof node === 'string') {
+    const leading = node.match(/^\s*/)?.[0] || ''
+    const trailing = node.match(/\s*$/)?.[0] || ''
+    const trimmed = node.trim()
+    return trimmed ? `${leading}${t(trimmed)}${trailing}` : node
+  }
+  if (!isValidElement(node)) return node
+  const props = {}
+  Object.entries(node.props).forEach(([key, value]) => {
+    if (key === 'children') props.children = localizeNode(value, t)
+    else if (typeof value === 'string' && ['label', 'placeholder', 'title', 'aria-label', 'alt', 'text', 'actionText'].includes(key)) props[key] = t(value)
+    else props[key] = value
+  })
+  return cloneElement(node, props)
+}
 const isAdmin = (user) => ['ADMIN', 'OWNER'].includes(user?.role)
 const isManager = (user) => user?.role === 'MANAGER'
 const canManageBusiness = (user) => isAdmin(user) || isManager(user)
@@ -35,6 +114,7 @@ const isOwnTransaction = (row, user) => {
 const isOwnRow = (row, user) => idOf(user) && idOf(row?.createdBy) === idOf(user)
 
 const emptyTransaction = {
+  productId: '', quantity: 1, unitPrice: '',
   productName: '',
   paidAmount: '',
   cashOut: '',
@@ -46,12 +126,17 @@ const emptyTransaction = {
 const emptyStock = {
   description: '',
   amount: '',
+  productId: '', stockQuantity: '',
   paymentMethod: 'CASH',
 }
 
 function useAuth() {
   const [user, setUser] = useState(() => {
     try {
+      if (!sessionStorage.getItem('shop_report_token')) {
+        sessionStorage.removeItem('shop_report_user')
+        return null
+      }
       const saved = sessionStorage.getItem('shop_report_user')
       return saved ? JSON.parse(saved) : null
     } catch {
@@ -60,20 +145,91 @@ function useAuth() {
       return null
     }
   })
+  const [lockedAccount, setLockedAccount] = useState(null)
+  const [showOnlineLogin, setShowOnlineLogin] = useState(false)
+  const [offline, setOffline] = useState(false)
+  const [offlinePin, setOfflinePin] = useState('')
 
-  const saveAuth = (data) => {
+  useEffect(() => {
+    if (showOnlineLogin || sessionStorage.getItem('shop_report_token')) return undefined
+    let alive = true
+    getOfflineAccount().then((account) => {
+      if (!alive || sessionStorage.getItem('shop_report_token')) return
+      if (!user) setLockedAccount(account || null)
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [user, showOnlineLogin])
+
+  const saveAuth = useCallback(async (data, pin) => {
     sessionStorage.setItem('shop_report_token', data.token)
     sessionStorage.setItem('shop_report_user', JSON.stringify(data.user))
+    if (pin) await rememberOfflineAccount(data.user, data.user.phoneNumber, pin).catch((error) => console.warn('Offline account setup failed:', error.message))
+    setLockedAccount(null)
+    setShowOnlineLogin(false)
+    setOffline(false)
+    setOfflinePin(pin || '')
     setUser(data.user)
-  }
+  }, [])
 
-  const logout = () => {
+  const unlockOffline = useCallback(async (pin) => {
+    const account = await verifyOfflinePin(pin)
+    if (!account) return { success: false, message: 'Incorrect offline PIN.' }
+    if (navigator.onLine) {
+      try {
+        const { data } = await api.post('/auth/login', { phoneNumber: account.phoneNumber, pin })
+        await saveAuth(data.data, pin)
+        return { success: true }
+      } catch (error) {
+        if (error.response && error.response.status < 500 && error.response.status !== 429) {
+          return { success: false, message: error.response.data?.message || 'Online sign-in failed.' }
+        }
+      }
+    }
+    setUser(account.user)
+    setOffline(true)
+    setOfflinePin(pin)
+    setLockedAccount(null)
+    return { success: true, offline: true }
+  }, [saveAuth])
+
+  const startOnlineLogin = useCallback(() => {
+    setUser(null)
+    setOffline(false)
+    setOfflinePin('')
+    setLockedAccount(null)
+    setShowOnlineLogin(true)
+  }, [])
+
+  const reauthenticate = useCallback(async (providedPin) => {
+    const pin = providedPin || offlinePin
+    if (!pin) return false
+    const account = await getOfflineAccount()
+    if (!account?.phoneNumber) return false
+    try {
+      const { data } = await api.post('/auth/login', { phoneNumber: account.phoneNumber, pin })
+      await saveAuth(data.data, pin)
+      return true
+    } catch {
+      return false
+    }
+  }, [offlinePin, saveAuth])
+
+  const logout = useCallback(async () => {
+    const currentId = String(user?._id || user?.id || '')
+    const pendingCount = currentId ? await offlineDb.operations.where('userId').equals(currentId).count() : 0
+    if (pendingCount && !window.confirm(`Logging out will permanently clear ${pendingCount} queued offline operation(s). Continue?`)) return false
+    await clearPrivateData()
     sessionStorage.removeItem('shop_report_token')
     sessionStorage.removeItem('shop_report_user')
+    setLockedAccount(null)
+    setShowOnlineLogin(false)
+    setOffline(false)
+    setOfflinePin('')
     setUser(null)
-  }
+    return true
+  }, [user])
 
-  return { user, saveAuth, logout }
+  return { user, saveAuth, logout, lockedAccount, showOnlineLogin, offline, offlinePin, unlockOffline, startOnlineLogin, reauthenticate }
 }
 
 function useApi(path, options = {}) {
@@ -110,6 +266,9 @@ function useApi(path, options = {}) {
 }
 
 function apiMessage(error) {
+  if (error.code === 'ERR_NETWORK' || (!error.response && error.request)) {
+    return `Cannot reach the server at ${API_BASE_URL}. Check the API URL and server connection, then try again.`
+  }
   return error.response?.data?.message || error.message || 'Something went wrong'
 }
 
@@ -117,63 +276,90 @@ function Card({ children, className = '' }) {
   return <section className={'card ' + className}>{children}</section>
 }
 
-function AppShell({ children, title, auth }) {
+function AppShell({ children, title, auth, productHeader = false, saleHeader = false }) {
+  const { t } = useContext(PreferencesContext)
   const [open, setOpen] = useState(false)
+  const [stockOpen, setStockOpen] = useState(true)
+  const [accountOpen, setAccountOpen] = useState(true)
   const navigate = useNavigate()
+  const [globalSearch, setGlobalSearch] = useState('')
+  const globalSearchRef = useRef(null)
   const initials = auth.user?.name?.split(' ').map((x) => x[0]).join('').slice(0, 2).toUpperCase() || 'SR'
+  useEffect(() => {
+    if (!saleHeader) return undefined
+    const onShortcut = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); globalSearchRef.current?.focus() } }
+    window.addEventListener('keydown', onShortcut)
+    return () => window.removeEventListener('keydown', onShortcut)
+  }, [saleHeader])
 
-  return <div className="app-shell">
+  return <div className={'app-shell' + (productHeader ? ' product-shell' : '') + (saleHeader ? ' sale-shell' : '')}>
     {open && <button className="scrim" aria-label="Close navigation" onClick={() => setOpen(false)} />}
     <aside className={'sidebar ' + (open ? 'open' : '')}>
       <div className="brand">
         <div className="brand-mark"><ReceiptText size={21} /></div>
-        <div><strong>SHOP REPORT</strong><small>SYSTEM</small></div>
+        <div><strong>MANAGEYOURSTOCK</strong></div>
         <button className="mobile-close" onClick={() => setOpen(false)}><X size={18} /></button>
       </div>
       <div className="shop-label">BUSINESS WORKSPACE</div>
-      <nav>{navItems.filter(([label]) => {
-        if (label === 'Users') return canManageAdmin(auth.user)
-        return true
-      }).map(([label, path, Icon]) =>
-        <NavLink key={path} to={path} onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}>
-          <Icon size={18} /><span>{label}</span>
-        </NavLink>)}</nav>
-      <button className="logout" onClick={() => { auth.logout(); navigate('/login') }}><LogOut size={18} /> Logout</button>
-      <p className="sidebar-foot">© 2026 Shop Report System</p>
+      <nav className="side-navigation">
+        <NavLink to="/dashboard" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><LayoutGrid size={17} /><span>{t('Dashboard')}</span></NavLink>
+        <button className="side-section" onClick={() => setStockOpen((value) => !value)} aria-expanded={stockOpen}><span><Boxes size={17} /> {t('STOCK')}</span><ChevronDown size={15} className={stockOpen ? 'section-chevron open' : 'section-chevron'} /></button>
+        {stockOpen && <div className="side-subnav">
+          <NavLink to="/products" end onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Package size={16} /><span>{t('All Products')}</span></NavLink>
+          <NavLink to="/sold-products" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><ShoppingCart size={16} /><span>{t('Sold Products')}</span></NavLink>
+
+          <NavLink to="/reports" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><FileText size={16} /><span>{t('Reports')}</span></NavLink>
+          <NavLink to="/transactions/new" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><ShoppingCart size={16} /><span>{t('Record Sale')}</span></NavLink>
+          {canManageBusiness(auth.user) && <NavLink to="/products/new" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active add-product-link' : 'add-product-link'}><Plus size={16} /><span>{t('Add Product')}</span></NavLink>}
+        </div>}
+        <button className="side-section account-section" onClick={() => setAccountOpen((value) => !value)} aria-expanded={accountOpen}><span><UserRound size={17} /> {t('ACCOUNT')}</span><ChevronDown size={15} className={accountOpen ? 'section-chevron open' : 'section-chevron'} /></button>
+        {accountOpen && <div className="side-subnav">
+          <NavLink to="/account" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><CircleUserRound size={16} /><span>{t('Account Information')}</span></NavLink>
+          {canManageBusiness(auth.user) && <NavLink to="/branches" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Building2 size={16} /><span>{t('Manage Branches')}</span></NavLink>}
+          {canManageAdmin(auth.user) && <NavLink to="/users" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Users size={16} /><span>{t('Users')}</span></NavLink>}
+          <NavLink to="/settings" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Settings size={16} /><span>{t('Settings')}</span></NavLink>
+        </div>}
+      </nav>
+      <button className="logout" onClick={async () => { if (await auth.logout()) navigate('/login') }}><LogOut size={18} /> {t('Logout')}</button>
+      <p className="sidebar-foot">manageyourstock</p>
     </aside>
     <main>
       <header className="topbar">
         <button className="menu-button" onClick={() => setOpen(true)}><Menu size={21} /></button>
-        <div><p className="eyebrow">OVERVIEW</p><h1>{title}</h1></div>
+        {productHeader ? <><div className="product-breadcrumb"><span>{t('Overview')}</span><b>/</b><strong>{t(title)}</strong></div><div className="product-top-actions"><span>Kigali Main Store</span><div className="avatar">{initials}</div><div className="user-name"><strong>{auth.user?.name || 'Shop User'}</strong><span>{auth.user?.role || 'USER'}</span></div></div></> : saleHeader ? <><div className="sale-header-title"><ReceiptText size={16} /><strong>{t(title)}</strong></div><form className="global-search" onSubmit={(event) => { event.preventDefault(); navigate('/products', { state: { search: globalSearch } }) }}><Search size={15} /><input ref={globalSearchRef} value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} placeholder="Search products... (Ctrl+K)" /><kbd>Ctrl K</kbd></form><div className="sale-header-avatar">{initials}</div></> : <><div><p className="eyebrow">{t('Overview').toUpperCase()}</p><h1>{t(title)}</h1></div>
         <div className="top-actions">
           <button className="icon-button"><Bell size={19} /><i /></button>
           <div className="avatar">{initials}</div>
           <div className="user-name"><strong>{auth.user?.name || 'Shop User'}</strong><span>{auth.user?.role || 'USER'}</span></div>
           <ChevronDown size={16} />
-        </div>
+        </div></>}
       </header>
-      {children}
+      <OfflineSyncStatus t={t} />
+      {localizeNode(children, t)}
     </main>
   </div>
 }
 
-function DateControls({ range, setRange, compact = false }) {
+function DateControls({ range, setRange, compact = false, onSearch }) {
+  const { t } = useContext(PreferencesContext)
   return <div className={'date-controls ' + (compact ? 'compact' : '')}>
-    <label><span>From date</span><input type="date" value={range.fromDate} onChange={(e) => setRange({ ...range, fromDate: e.target.value })} /></label>
-    <label><span>To date</span><input type="date" value={range.toDate} onChange={(e) => setRange({ ...range, toDate: e.target.value })} /></label>
-    <button className="button secondary" onClick={() => setRange({ ...range, fromDate: monthStart, toDate: today })}><CalendarDays size={16} /> This month</button>
-    <button className="button"><Search size={16} /> Search</button>
+    <label><span>{t("From date")}</span><input type="date" value={range.fromDate} onChange={(e) => setRange({ ...range, fromDate: e.target.value })} /></label>
+    <label><span>{t("To date")}</span><input type="date" value={range.toDate} onChange={(e) => setRange({ ...range, toDate: e.target.value })} /></label>
+    <button className="button secondary" onClick={() => setRange({ ...range, fromDate: monthStart, toDate: today })}><CalendarDays size={16} /> {t("This month")}</button>
+    <button type="button" className="button" onClick={onSearch}><Search size={16} /> {t("Search")}</button>
   </div>
 }
 
 function TableState({ loading, error, empty, colSpan = 7 }) {
-  if (loading) return <tr><td colSpan={colSpan} className="empty-cell">Loading records...</td></tr>
+  const { t } = useContext(PreferencesContext)
+  if (loading) return <tr><td colSpan={colSpan} className="empty-cell">{t("Loading records...")}</td></tr>
   if (error) return <tr><td colSpan={colSpan} className="empty-cell">{error}</td></tr>
-  if (empty) return <tr><td colSpan={colSpan} className="empty-cell">No records found.</td></tr>
+  if (empty) return <tr><td colSpan={colSpan} className="empty-cell">{t("No records found.")}</td></tr>
   return null
 }
 
 function TransactionTable({ rows = [], loading, error, adding = false, draft = emptyTransaction, setDraft, onSave, onCancel, saving = false, onUpdate, onDelete, currentUser }) {
+  const { t } = useContext(PreferencesContext)
   const [editingId, setEditingId] = useState('')
   const [editDraft, setEditDraft] = useState(emptyTransaction)
   const [editing, setEditing] = useState(false)
@@ -189,6 +375,7 @@ function TransactionTable({ rows = [], loading, error, adding = false, draft = e
   const startEdit = (row) => {
     setEditingId(row._id)
     setEditDraft({
+      productId: idOf(row.productId) || '', quantity: row.quantity ?? 1, unitPrice: row.unitPrice ?? '',
       productName: row.productOrService || row.serviceOrProduct || '',
       paidAmount: row.paidAmount ?? '',
       cashOut: row.cashOut ?? '',
@@ -209,24 +396,24 @@ function TransactionTable({ rows = [], loading, error, adding = false, draft = e
   }
 
   return <div className="table-wrap"><table className="transaction-table">
-    <thead><tr><th>Date</th><th>User</th><th>Product name</th><th>Amount</th><th>Cash Out</th><th>Cash In</th><th>Rest</th><th>Method</th><th>Description</th><th></th></tr></thead>
+    <thead><tr><th>{t("Date")}</th><th>{t("User")}</th><th>{t("Product name")}</th><th>{t("Amount")}</th><th>{t("Cash Out")}</th><th>{t("Cash In")}</th><th>{t("Rest")}</th><th>{t("Method")}</th><th>{t("Description")}</th><th></th></tr></thead>
     <tbody>
       {adding && <tr className="inline-row">
-        <td>Today</td>
-        <td>Me</td>
-        <td><input required value={draft.productName} onChange={(e) => setDraft({ ...draft, productName: e.target.value })} placeholder="Product name" /></td>
+        <td>{t("Today")}</td>
+        <td>{t("Me")}</td>
+        <td><input required value={draft.productName} onChange={(e) => setDraft({ ...draft, productName: e.target.value })} placeholder={t("Product name")} /></td>
         <td><input required min="0" type="number" value={draft.paidAmount} onChange={(e) => setDraft({ ...draft, paidAmount: e.target.value })} placeholder="0" /></td>
         <td><input required min="0" type="number" value={draft.cashOut} onChange={(e) => setDraft({ ...draft, cashOut: e.target.value })} placeholder="0" /></td>
         <td>{money(draftCashIn)} <small>RWF</small></td>
         <td><input required min="0" type="number" value={draft.remainingAmount} onChange={(e) => setDraft({ ...draft, remainingAmount: e.target.value })} placeholder="0" /></td>
         <td><Select value={draft.paymentMethod} onChange={(paymentMethod) => setDraft({ ...draft, paymentMethod })} /></td>
-        <td><input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Optional" /></td>
-        <td className="row-buttons"><button className="button" onClick={onSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button><button className="button secondary" onClick={onCancel}>Cancel</button></td>
+        <td><input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder={t("Optional")} /></td>
+        <td className="row-buttons"><button className="button" onClick={onSave} disabled={saving}>{saving ? t("Saving...") : t("Save")}</button><button className="button secondary" onClick={onCancel}>{t("Cancel")}</button></td>
       </tr>}
       <TableState loading={loading} error={error} empty={!rows.length && !adding} colSpan={10} />
-      {rows.map((t) => editingId === t._id ? <tr key={t._id} className="inline-row">
-        <td>{new Date(t.saleDate || t.transactionDate || t.createdAt).toLocaleDateString()}</td>
-        <td>{t.staff?.fullName || t.staff?.name || t.createdBy?.fullName || t.createdBy?.name || '-'}</td>
+      {rows.map((row) => editingId === row._id ? <tr key={row._id} className="inline-row">
+        <td>{new Date(row.saleDate || row.transactionDate || row.createdAt).toLocaleDateString()}</td>
+        <td>{row.staff?.fullName || row.staff?.name || row.createdBy?.fullName || row.createdBy?.name || '-'}</td>
         <td><input required value={editDraft.productName} onChange={(e) => setEditDraft({ ...editDraft, productName: e.target.value })} /></td>
         <td><input required min="0" type="number" value={editDraft.paidAmount} onChange={(e) => setEditDraft({ ...editDraft, paidAmount: e.target.value })} /></td>
         <td><input required min="0" type="number" value={editDraft.cashOut} onChange={(e) => setEditDraft({ ...editDraft, cashOut: e.target.value })} /></td>
@@ -234,20 +421,20 @@ function TransactionTable({ rows = [], loading, error, adding = false, draft = e
         <td><input required min="0" type="number" value={editDraft.remainingAmount} onChange={(e) => setEditDraft({ ...editDraft, remainingAmount: e.target.value })} /></td>
         <td><Select value={editDraft.paymentMethod} onChange={(paymentMethod) => setEditDraft({ ...editDraft, paymentMethod })} /></td>
         <td><input value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} /></td>
-        <td className="row-buttons"><button className="button" onClick={saveEdit} disabled={editing}>{editing ? 'Saving...' : 'Save'}</button><button className="button secondary" onClick={() => setEditingId('')}>Cancel</button></td>
-      </tr> : <tr key={t._id}>
-        <td>{new Date(t.saleDate || t.transactionDate || t.createdAt).toLocaleDateString()}</td>
-        <td>{t.staff?.fullName || t.staff?.name || t.createdBy?.fullName || t.createdBy?.name || '-'}</td>
-        <td><strong>{t.productOrService || t.serviceOrProduct}</strong></td>
-        <td>{money(t.paidAmount)} <small>RWF</small></td>
-        <td>{money(t.cashOut)} <small>RWF</small></td>
-        <td>{money(cashInFor(t))} <small>RWF</small></td>
-        <td>{money(t.remainingAmount)} <small>RWF</small></td>
-        <td>{t.paymentMethod === 'MOMO' ? 'MoMo Pay' : 'Cash'}</td>
-        <td>{t.notes || '-'}</td>
-        <td>{canChangeRows && isOwnTransaction(t, currentUser) && <><button className="row-action" onClick={() => startEdit(t)}><Edit2 size={16} /></button><button className="row-action" onClick={() => confirmDelete() && onDelete?.(t._id)}><Trash2 size={16} /></button></>}</td>
+        <td className="row-buttons"><button className="button" onClick={saveEdit} disabled={editing}>{editing ? t("Saving...") : t("Save")}</button><button className="button secondary" onClick={() => setEditingId('')}>{t("Cancel")}</button></td>
+      </tr> : <tr key={row._id}>
+        <td>{new Date(row.saleDate || row.transactionDate || row.createdAt).toLocaleDateString()}</td>
+        <td>{row.staff?.fullName || row.staff?.name || row.createdBy?.fullName || row.createdBy?.name || '-'}</td>
+        <td><strong>{row.productOrService || row.serviceOrProduct}</strong></td>
+        <td>{money(row.paidAmount)} <small>RWF</small></td>
+        <td>{money(row.cashOut)} <small>RWF</small></td>
+        <td>{money(cashInFor(row))} <small>RWF</small></td>
+        <td>{money(row.remainingAmount)} <small>RWF</small></td>
+        <td>{row.paymentMethod === 'MOMO' ? t('MoMo Pay') : t('Cash')}</td>
+        <td>{row.notes || '-'}</td>
+        <td>{canChangeRows && isOwnTransaction(row, currentUser) && <><button className="row-action" onClick={() => startEdit(row)}><Edit2 size={16} /></button><button className="row-action" onClick={() => confirmDelete() && onDelete?.(row._id)}><Trash2 size={16} /></button></>}</td>
       </tr>)}
-      <tr className="total-row"><td colSpan="3">Total</td><td>{money(totals.paidAmount)} <small>RWF</small></td><td>{money(totals.cashOut)} <small>RWF</small></td><td>{money(totals.cashIn)} <small>RWF</small></td><td>{money(totals.remainingAmount)} <small>RWF</small></td><td colSpan="3"></td></tr>
+      <tr className="total-row"><td colSpan="3">{t("Total")}</td><td>{money(totals.paidAmount)} <small>RWF</small></td><td>{money(totals.cashOut)} <small>RWF</small></td><td>{money(totals.cashIn)} <small>RWF</small></td><td>{money(totals.remainingAmount)} <small>RWF</small></td><td colSpan="3"></td></tr>
     </tbody>
   </table></div>
 }
@@ -266,26 +453,36 @@ function Dashboard({ auth }) {
   const summary = useApi('/dashboard/summary', { params: { ...range, refresh }, initial: {}, refreshMs: liveRefreshMs })
   const recent = useApi('/transactions', { params: { ...range, limit: 5, refresh }, initial: [], refreshMs: liveRefreshMs })
   const stock = useApi('/expenses', { params: { ...range, refresh }, initial: [], refreshMs: liveRefreshMs })
+  const productInventory = useApi('/products', { params: { refresh }, initial: [], refreshMs: liveRefreshMs })
   const data = summary.data || {}
   const amount = data.totalAmount || data.totalPaid || data.paidAmount || 0
   const cashOut = data.totalCashOut || 0
   const cashIn = data.totalCashIn ?? data.totalMoneyEarned ?? amount - cashOut
   const unpaid = data.totalRemaining || data.notPaid || 0
-  const imported = (stock.data || []).reduce((sum, row) => sum + Number(row.amount || 0), 0)
+  const productRows = productInventory.data || []
+  const activeProducts = productRows.filter((product) => product.status === 'ACTIVE')
+  const inventoryUnits = productRows.reduce((sum, product) => sum + Number(product.quantity || 0), 0)
+  const inventoryValue = productRows.reduce((sum, product) => sum + Number(product.costPrice || 0) * Number(product.quantity || 0), 0)
+  const lowStockProducts = activeProducts.filter((product) => Number(product.quantity || 0) > 0 && Number(product.quantity) <= Number(product.lowStockLevel || 0))
+  const outOfStockProducts = activeProducts.filter((product) => Number(product.quantity || 0) === 0)
   const pie = [{ name: 'Cash In', value: cashIn, color: '#246bfd' }, { name: 'Remaining', value: unpaid, color: '#f3ae35' }]
 
   return <AppShell title="Dashboard" auth={auth}><div className="page-content">
-    <DateControls range={range} setRange={setRange} />
+    <div className="dashboard-welcome"><div><span className="eyebrow">BUSINESS OVERVIEW</span><h2>Stock and sales at a glance</h2><p>Monitor cash flow, inventory levels, and recent activity.</p></div><button type="button" className="button secondary" onClick={() => setRefresh((value) => value + 1)} disabled={summary.loading || productInventory.loading}><RefreshCw size={15} /> Refresh dashboard</button></div>
+    <DateControls range={range} setRange={setRange} onSearch={() => setRefresh((value) => value + 1)} />
     {summary.error && <Notice tone="error">{summary.error}</Notice>}
-    <div className="stat-grid">{[
-      [CircleDollarSign, 'Amount', money(amount), 'RWF', 'Customer payments', 'green'],
-      [Wallet, 'Cash Out', money(cashOut), 'RWF', 'Service/product costs', 'orange'],
-      [CircleDollarSign, 'Cash In', money(cashIn), 'RWF', 'Amount minus Cash Out', 'blue'],
-      [Wallet, 'Amount rest', money(unpaid), 'RWF', 'Remaining money', 'orange'],
-      [ClipboardList, 'Transactions', data.transactionCount || 0, '', 'Selected period', 'purple'],
-      [Package, 'Imported stock', money(imported), 'RWF', 'Selected period', 'blue'],
-    ].map(([Icon, label, value, unit, note, color]) => <Card className="stat-card" key={label}>
-      <div className={'stat-icon ' + color}><Icon size={20} /></div><p>{label}</p><h2>{value} <small>{unit}</small></h2><span className="change">{note}</span>
+    {productInventory.error && <Notice tone="error">{productInventory.error}</Notice>}
+    <div className="dashboard-stat-grid">{[
+      [CircleDollarSign, 'Payments received', money(amount), 'RWF', 'Customer payments during selected period', 'green'],
+      [Wallet, 'Cash out', money(cashOut), 'RWF', 'Recorded expenses against sales', 'orange'],
+      [CircleDollarSign, 'Net cash', money(cashIn), 'RWF', 'Payments received after cash out', 'blue'],
+      [Wallet, 'Outstanding balance', money(unpaid), 'RWF', 'Remaining customer balance', 'orange'],
+      [ClipboardList, 'Sales recorded', data.transactionCount || 0, '', 'During selected period', 'purple'],
+      [Package, 'Units in stock', money(inventoryUnits), '', `${activeProducts.length} active products`, 'blue'],
+      [CircleDollarSign, 'Current stock value', money(inventoryValue), 'RWF', 'Quantity multiplied by cost price', 'teal'],
+      [Package, 'Low / out of stock', lowStockProducts.length + outOfStockProducts.length, '', `${outOfStockProducts.length} out of stock`, 'orange'],
+    ].map(([Icon, label, value, unit, note, color]) => <Card className="stat-card dashboard-stat-card" key={label}>
+      <div className={'stat-icon ' + color}><Icon size={19} /></div><p>{label}</p><h2>{value} <small>{unit}</small></h2><span className="change">{note}</span>
     </Card>)}</div>
     <div className="dashboard-grid">
       <Card className="recent"><SectionTitle title="Recent transactions" text="Latest sales activity" link="/transactions" /><TransactionTable rows={recent.data || []} loading={recent.loading} error={recent.error} onUpdate={updateTransaction} onDelete={deleteTransaction} currentUser={auth.user} /></Card>
@@ -295,13 +492,15 @@ function Dashboard({ auth }) {
         <div className="legend">{pie.map((x) => <div key={x.name}><i style={{ background: x.color }} /><span>{x.name}</span><strong>{money(x.value)} RWF</strong></div>)}</div>
       </Card>
     </div>
+    <div className="dashboard-grid dashboard-single"><Card className="recent"><SectionTitle title="Low stock products" text="Products at or below their alert level" link="/products" /><LowStockList items={[...outOfStockProducts, ...lowStockProducts].slice(0, 8)} /></Card></div>
     <Card className="recent dashboard-stock"><SectionTitle title="Recent imported stock" text="Latest inventory purchases by all users" link="/expenses" /><ResourceTable type="expenses" rows={(stock.data || []).slice(0, 5)} loading={stock.loading} error={stock.error} /></Card>
-    <Card className="quick"><div><h2>Quick actions</h2><p>Work faster</p></div><NavLink className="quick-action" to="/transactions/new"><Plus /> New transaction</NavLink><NavLink className="quick-action muted" to="/reports"><BarChart3 /> View reports</NavLink></Card>
+    <Card className="quick"><div><h2>Quick actions</h2><p>Work faster</p></div><NavLink className="quick-action" to="/transactions/new"><Plus /> New transaction</NavLink>{canManageBusiness(auth.user) && <NavLink className="quick-action" to="/products/new"><Plus /> New product</NavLink>}<NavLink className="quick-action muted" to="/reports"><BarChart3 /> View reports</NavLink></Card>
   </div></AppShell>
 }
 
 function SectionTitle({ title, text, link, action }) {
-  return <div className="section-title"><div><h2>{title}</h2><p>{text}</p></div>{action || (link && <NavLink to={link}>View all</NavLink>)}</div>
+  const { t } = useContext(PreferencesContext)
+  return <div className="section-title"><div><h2>{t(title)}</h2><p>{t(text)}</p></div>{action || (link && <NavLink to={link}>{t('View all')}</NavLink>)}</div>
 }
 
 function Notice({ children, tone = 'info' }) {
@@ -312,7 +511,40 @@ function confirmDelete() {
   return window.confirm('Are you sure you want to delete this row?')
 }
 
+function OfflineUnlock({ auth }) {
+  const { t } = useContext(PreferencesContext)
+  const navigate = useNavigate()
+  const [pin, setPin] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const unlock = async (event) => {
+    event.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      const result = await auth.unlockOffline(pin)
+      if (!result.success) setError(result.message)
+      else navigate(result.offline ? '/transactions/new' : '/dashboard', { replace: true })
+    } catch (unlockError) {
+      setError(unlockError.message || 'Could not unlock this device.')
+    } finally {
+      setLoading(false)
+    }
+  }
+  return <div className="login"><div className="login-panel">
+    <div className="login-brand"><div className="brand-mark"><ReceiptText /></div><strong>MANAGEYOURSTOCK</strong></div>
+    <div className="login-copy"><h1>{t('Unlock offline data')}</h1><p>{auth.lockedAccount?.user?.name || t('Your account')} · {t('Enter your account PIN to access this device’s saved products and queued work.')}</p></div>
+    {error && <Notice tone="error">{error}</Notice>}
+    <form className="login-form" onSubmit={unlock}>
+      <label><span>{t('PIN')}</span><input inputMode="numeric" maxLength="4" pattern="[0-9]*" type="password" autoComplete="current-password" autoFocus value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} /></label>
+      <button className="login-button" disabled={pin.length !== 4 || loading}>{loading ? t('Unlocking…') : t('Unlock this device')}</button>
+    </form>
+    <button className="button secondary offline-online-login" type="button" onClick={auth.startOnlineLogin}>{t('Sign in online instead')}</button>
+  </div></div>
+}
+
 function Login({ auth }) {
+  const { t } = useContext(PreferencesContext)
   const [phoneNumber, setPhoneNumber] = useState('0788721005')
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
@@ -324,7 +556,7 @@ function Login({ auth }) {
     setLoading(true); setError('')
     try {
       const { data } = await api.post('/auth/login', { phoneNumber, pin })
-      auth.saveAuth(data.data)
+      await auth.saveAuth(data.data, pin)
       navigate('/dashboard')
     } catch (error) {
       setError(apiMessage(error))
@@ -335,19 +567,19 @@ function Login({ auth }) {
 
   return <div className="login">
     <div className="login-panel">
-      <div className="login-brand"><div className="brand-mark"><ReceiptText /></div><strong>SHOP REPORT</strong><span>SYSTEM</span></div>
-      <div className="login-copy"><h1>Sign in</h1><p>Enter your phone number and PIN.</p></div>
+      <div className="login-brand"><div className="brand-mark"><ReceiptText /></div><strong>MANAGEYOURSTOCK</strong></div>
+      <div className="login-copy"><h1>{t("Sign in")}</h1><p>{t("Enter your phone number and PIN.")}</p></div>
       {error && <Notice tone="error">{error}</Notice>}
       <form className="login-form" onSubmit={login}>
-        <label><span>Phone number</span><input value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="username" autoFocus placeholder="0788721005" /></label>
-        <label><span>PIN</span><input inputMode="numeric" maxLength="4" pattern="[0-9]*" type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} autoComplete="current-password" placeholder="Enter 4-digit PIN" /></label>
-        <button className="login-button" disabled={pin.length !== 4 || phoneNumber.length < 7 || loading}>{loading ? 'Signing in...' : 'Sign in securely'}</button>
+        <label><span>{t("Phone number")}</span><input value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="username" autoFocus placeholder="0788721005" /></label>
+        <label><span>{t("PIN")}</span><input inputMode="numeric" maxLength="4" pattern="[0-9]*" type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} autoComplete="current-password" placeholder={t("Enter 4-digit PIN")} /></label>
+        <button className="login-button" disabled={pin.length !== 4 || phoneNumber.length < 7 || loading}>{loading ? t("Signing in...") : t("Sign in securely")}</button>
       </form>
     </div>
   </div>
 }
 
-function TransactionsPage({ auth }) {
+function TransactionsPage({ auth, title = 'Transactions' }) {
   const [range, setRange] = useState({ fromDate: monthStart, toDate: today })
   const [refresh, setRefresh] = useState(0)
   const updateTransaction = async (id, data) => {
@@ -359,59 +591,273 @@ function TransactionsPage({ auth }) {
     setRefresh((value) => value + 1)
   }
   const list = useApi('/transactions', { params: { ...range, limit: 50, refresh }, initial: [], refreshMs: liveRefreshMs })
-  return <AppShell title="Transactions" auth={auth}><div className="page-content">
-    <Hero title="Transactions" text="Record and review customer sales." action="/transactions/new" actionText="New transaction" />
-    <DateControls range={range} setRange={setRange} compact />
+  return <AppShell title={title} auth={auth}><div className="page-content">
+    <Hero title={title} text="Record and review customer sales." action="/transactions/new" actionText="Record sale" />
+    <DateControls range={range} setRange={setRange} compact onSearch={() => setRefresh((value) => value + 1)} />
     <Card className="recent"><SectionTitle title="All transactions" text="Showing records from your selected period" /><TransactionTable rows={list.data || []} loading={list.loading} error={list.error} onUpdate={updateTransaction} onDelete={deleteTransaction} currentUser={auth.user} /></Card>
   </div></AppShell>
 }
 
-function NewTransaction({ auth }) {
+function SoldProductsPage({ auth }) {
+  const [search, setSearch] = useState('')
+  const [branch, setBranch] = useState('')
+  const [category, setCategory] = useState('')
+  const [payment, setPayment] = useState('')
+  const [refresh, setRefresh] = useState(0)
+  const [page, setPage] = useState(1)
+  const pageSize = 10
+  const list = useApi('/transactions', { params: { limit: 200, refresh }, initial: [], refreshMs: liveRefreshMs })
+  const branchList = useApi('/branches', { initial: [] })
+  const rows = (list.data || []).filter((row) => {
+    const product = row.productId || {}
+    const text = `${row.serviceOrProduct || row.productOrService || ''} ${product.name || ''} ${product.sku || ''} ${product.category || ''} ${product.description || ''}`.toLowerCase()
+    return (!search || text.includes(search.toLowerCase())) && (!branch || (row.branchId?._id || row.branchId) === branch) && (!category || product.category === category) && (!payment || row.paymentMethod === payment)
+  })
+  const branches = branchList.data || []
+  const categories = [...new Set((list.data || []).map((row) => row.productId?.category).filter(Boolean))].sort()
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize))
+  const visiblePage = Math.min(page, pageCount)
+  const visibleRows = rows.slice((visiblePage - 1) * pageSize, visiblePage * pageSize)
+  const removeSale = async (row) => {
+    const productName = row.serviceOrProduct || row.productOrService
+    if (!window.confirm(`Delete this ${productName} sale? Its sold quantity will be returned to stock.`)) return
+    try { await api.delete(`/transactions/${row._id}`); setRefresh((value) => value + 1) } catch (error) { window.alert(apiMessage(error)) }
+  }
+  const totalSales = rows.length
+  return <AppShell title="Sold Products" auth={auth} saleHeader><div className="page-content sold-products-page">
+    <div className="sold-product-filters"><label className="catalog-search"><Search size={14} /><input placeholder="Search by product, category, SKU, model..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} /></label><select value={branch} onChange={(event) => { setBranch(event.target.value); setPage(1) }}><option value="">All Branches</option>{branches.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}</select><select value={category} onChange={(event) => { setCategory(event.target.value); setPage(1) }}><option value="">All Categories</option>{categories.map((item) => <option key={item}>{item}</option>)}</select><select aria-label="Filter by payment type" value={payment} onChange={(event) => { setPayment(event.target.value); setPage(1) }}><option value="">All Payment Types</option><option value="CASH">Cash</option><option value="MOMO">Mobile Money</option><option value="CARD">Card</option><option value="BANK">Bank</option><option value="OTHER">Other</option></select><button type="button" className="button secondary" onClick={() => setRefresh((value) => value + 1)} disabled={list.loading}><RefreshCw size={13} /> Refresh</button></div>
+    {list.error && <Notice tone="error">{list.error} <button className="button secondary" type="button" onClick={() => setRefresh((value) => value + 1)}>Retry</button></Notice>}
+    {list.loading && !list.data?.length ? <div className="sold-products-loading">Loading sold products...</div> : <div className="sold-product-grid">{visibleRows.map((row) => {
+      const product = row.productId || {}
+      const name = row.serviceOrProduct || row.productOrService || product.name || 'Product'
+      const quantity = Number(row.quantity || 0)
+      const revenue = Number(row.totalAmount ?? quantity * Number(row.unitPrice || 0))
+      const unitCost = Number(row.unitCost ?? product.costPrice ?? 0)
+      const profit = revenue - quantity * unitCost
+      const date = new Date(row.transactionDate || row.saleDate || row.createdAt)
+      return <article className="sold-product-card" key={row._id}>
+        <div className="sold-product-image"><div className="sold-image-placeholder"><Package size={36} /><span>{product.category || 'PRODUCT'}</span></div><span className="sold-payment-badge">{row.paymentMethod || 'SALE'}</span></div>
+        <div className="sold-product-body"><div className="sold-product-title"><strong>{name}</strong><span>{product.location || 'Main Store'}</span></div><p className="sold-product-subtitle">{product.category || 'Product'}{product.brand ? ` Â· ${product.brand}` : ''}{product.sku ? ` Â· ${product.sku}` : ''}</p><div className="sold-metrics"><span>Quantity<br /><b>{quantity} {product.unit || 'Pcs'}</b></span><span>Unit Price<br /><b>{money(row.unitPrice)} RWF</b></span></div><div className="sold-metrics"><span>Purchase Cost<br /><b>{money(unitCost)} RWF</b></span><span>Total Revenue<br /><b>{money(revenue)} RWF</b></span></div>{row.customerName && <div className="sold-customer">Customer: {row.customerName}</div>}</div>
+        <div className="sold-product-footer"><span>{Number.isNaN(date.getTime()) ? 'â€”' : date.toLocaleDateString()}</span><div className="sold-footer-actions"><b>Profits: {money(profit)} RWF</b>{canManageBusiness(auth.user) && <button title="Delete sale and restore stock" aria-label="Delete sale and restore stock" onClick={() => removeSale(row)}><RotateCcw size={14} /></button>}</div></div>
+      </article>
+    })}{!list.error && !visibleRows.length && <Card className="catalog-state">No sold products found.</Card>}</div>}
+    <div className="catalog-pagination"><span>Showing {rows.length ? (visiblePage - 1) * pageSize + 1 : 0} to {Math.min(visiblePage * pageSize, totalSales)} of {totalSales} sales records</span><div><button disabled={visiblePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>â€¹ Previous</button><b>{visiblePage}</b><button disabled={visiblePage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Next â€º</button></div></div>
+  </div></AppShell>
+}
+
+const blankProduct = { name: '', sku: '', category: '', brand: '', description: '', unit: 'Pieces (pcs)', costPrice: 0, sellingPrice: '', quantity: 0, lowStockLevel: 5, branchId: '', location: 'Shelf A2', supplier: '', status: 'ACTIVE', notes: '' }
+
+function LowStockList({ items = [] }) {
+  const { t } = useContext(PreferencesContext)
+  if (!items.length) return <p className="empty-cell">{t("No products are currently low on stock.")}</p>
+  return <div className="low-stock-list">{items.map((product) => <div key={product._id}><strong>{product.name}</strong><span>{product.location}</span><b className={Number(product.quantity) === 0 ? 'stock-badge out' : 'stock-badge low'}>{Number(product.quantity) === 0 ? 'Out of Stock' : `Low Stock Â· ${product.quantity}`}</b></div>)}</div>
+}
+
+function ProductsPage({ auth, initialAdd = false }) {
+  const { t } = useContext(PreferencesContext)
   const navigate = useNavigate()
-  const [form, setForm] = useState(emptyTransaction)
+  const location = useLocation()
+  const [filters, setFilters] = useState({ search: location.state?.search || '', category: '', brand: '', branchId: '', status: '', lowStock: '' })
+  const [refresh, setRefresh] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [cardView, setCardView] = useState(true)
+  const [selectedRows, setSelectedRows] = useState([])
+  const [formOpen, setFormOpen] = useState(initialAdd)
+  const [editingId, setEditingId] = useState('')
+  const [form, setForm] = useState(blankProduct)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [combinedCost, setCombinedCost] = useState(false)
+  const [customOptions, setCustomOptions] = useState({ category: [], brand: [], model: [], location: [] })
+  useEffect(() => {
+    if (location.state?.search !== undefined) setFilters((current) => ({ ...current, search: location.state.search || '' }))
+  }, [location.key, location.state?.search])
+  const params = Object.fromEntries(Object.entries({ ...filters, refresh }).filter(([key, value]) => key !== 'brand' && key !== 'sort' && value !== ''))
+  const list = useApi('/products', { params, initial: [], refreshMs: liveRefreshMs })
+  const branchList = useApi('/branches', { params: { refresh }, initial: [] })
+  const rows = list.data || []
+  const categories = [...new Set([...rows.map((row) => row.category).filter(Boolean), 'Electronics', 'Accessories', ...customOptions.category])]
+  const brands = [...new Set([...rows.map((row) => row.brand).filter(Boolean), 'Apple', 'Samsung', ...customOptions.brand])]
+  const models = [...new Set([...rows.map((row) => row.description).filter(Boolean), ...customOptions.model])]
+  const branches = branchList.data || []
+  const startAdd = () => { setEditingId(''); setForm(blankProduct); setCombinedCost(false); setFormOpen(true); setError(''); setMessage(''); navigate('/products/new') }
+  const startEdit = (row) => { setEditingId(row._id); setForm({ ...blankProduct, ...row, branchId: row.branchId?._id || row.branchId || '', sku: row.sku || '' }); setFormOpen(true); setError(''); setMessage('') }
+  const submit = async (event) => {
+    event.preventDefault(); setSaving(true); setError(''); setMessage('')
+    const quantity = Number(form.quantity)
+    const enteredCost = Number(form.costPrice || 0)
+    const body = { ...form, costPrice: combinedCost && quantity ? enteredCost / quantity : enteredCost, sellingPrice: Number(form.sellingPrice || 0), quantity, lowStockLevel: Number(form.lowStockLevel) }
+    try {
+      if (editingId) await api.put(`/products/${editingId}`, body)
+      else await api.post('/products', body)
+      setFormOpen(false); setEditingId(''); setForm(blankProduct); setRefresh((v) => v + 1); setMessage(editingId ? 'Product updated.' : 'Product added.'); navigate('/products')
+    } catch (submitError) { setError(apiMessage(submitError)) } finally { setSaving(false) }
+  }
+  const remove = async (product) => {
+    if (!confirm(`Delete ${product.name}?`)) return
+    setError(''); setMessage('')
+    try { await api.delete(`/products/${product._id}`); setRefresh((v) => v + 1); setMessage('Product deleted.') } catch (deleteError) { setError(apiMessage(deleteError)) }
+  }
+  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
+  const addOption = (key) => {
+    const value = window.prompt(`Enter new ${key === 'model' ? 'model' : key}`)?.trim()
+    if (!value) return
+    setCustomOptions((current) => ({ ...current, [key]: [...new Set([...current[key], value])] }))
+    set(key === 'model' ? 'description' : key, value)
+  }
+  const visibleRows = rows.filter((row) => !filters.brand || row.brand === filters.brand).sort((a, b) => filters.sort === 'name' ? a.name.localeCompare(b.name) : filters.sort === 'oldest' ? new Date(a.createdAt) - new Date(b.createdAt) : new Date(b.createdAt) - new Date(a.createdAt))
+  const pageCount = Math.max(1, Math.ceil(visibleRows.length / pageSize))
+  const pageRows = visibleRows.slice((page - 1) * pageSize, page * pageSize)
+  const totalQuantity = rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+  const toggleRow = (id) => setSelectedRows((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])
+  const duplicate = (row) => { setEditingId(''); setForm({ ...blankProduct, ...row, branchId: row.branchId?._id || row.branchId || '', _id: undefined, name: `${row.name} copy`, sku: '', quantity: 0 }); setFormOpen(true); navigate('/products/new') }
+  const setStatus = async (row) => {
+    const product = Object.fromEntries(Object.entries(row).filter(([key]) => !['_id', 'createdAt', 'updatedAt', 'addedBy', 'lastUpdatedBy', '__v'].includes(key)))
+    product.branchId = row.branchId?._id || row.branchId || ''
+    try { await api.put(`/products/${row._id}`, { ...product, status: row.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }); setRefresh((value) => value + 1) } catch (statusError) { setError(apiMessage(statusError)) }
+  }
+  return <AppShell title={formOpen ? (editingId ? 'Edit Product' : 'Add New Product') : 'Products'} auth={auth} saleHeader><div className={'page-content products-content' + (formOpen ? ' product-add-content' : '')}>
+    {!formOpen && <div className="products-toolbar"><div><h2>Products</h2><p>{totalQuantity} Total Items ({rows.length} unique products)</p></div><div className="products-toolbar-actions"><button className="button secondary" onClick={() => setRefresh((value) => value + 1)}><RefreshCw size={13} /> Refresh</button><div className="view-switch"><button className={cardView ? 'selected' : ''} aria-label="Card view" onClick={() => setCardView(true)}><Grid2X2 size={14} /></button><button className={!cardView ? 'selected' : ''} aria-label="List view" onClick={() => setCardView(false)}><List size={14} /></button></div><NavLink className="button record-sale-button" to="/transactions/new"><ShoppingCart size={13} /> Record Sale</NavLink>{canManageBusiness(auth.user) && <button className="button" onClick={startAdd}><Plus size={14} /> Add Product</button>}</div></div>}
+    {message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
+    {formOpen && <><div className="product-add-heading"><div><h2>{editingId ? 'Edit Product' : 'Register New Stock Product'}</h2><p>Fill in product details to register new inventory stock.</p></div><button type="button" className="button secondary" onClick={() => { setFormOpen(false); navigate('/products') }}>â† Back to Products</button></div><Card className="form-card product-form"><form onSubmit={submit}>
+      <section className="product-form-section"><h3>PRODUCT INFORMATION</h3><div className="product-form-grid product-info-grid">
+        <Field label={<>Product name <i>*</i></>}><input required placeholder="e.g. iPhone 15 Pro Max" value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
+        <Field label="SKU / Product code"><input placeholder="Optional unique code" value={form.sku || ''} onChange={(e) => set('sku', e.target.value.toUpperCase())} /></Field>
+        <ProductChoice label="Category" required value={form.category} options={categories} onChange={(value) => set('category', value)} onAdd={() => addOption('category')} />
+        <ProductChoice label="Brand" required value={form.brand} options={brands} onChange={(value) => set('brand', value)} onAdd={() => addOption('brand')} />
+        <ProductChoice label="Model" value={form.description} options={models} onChange={(value) => set('description', value)} onAdd={() => addOption('model')} />
+      </div></section>
+      <section className="product-form-section"><h3>STOCK AND PRICING</h3><div className="product-form-grid stock-pricing-grid">
+        <Field label={<>Quantity <i>*</i></>}><input required min="0" type="number" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} /></Field>
+        <Field label={<>Unit <i>*</i></>}><select required value={form.unit} onChange={(e) => set('unit', e.target.value)}><option>Pieces (pcs)</option><option>Box</option><option>Pack</option><option>Kg</option><option>Gram</option><option>Liter</option><option>Meter</option></select></Field>
+        <MoneyField label={<>Purchase price (per unit) <i>*</i></>} value={form.costPrice} onChange={(value) => set('costPrice', value)} required />
+        <MoneyField label="Selling price (per unit)" value={form.sellingPrice} onChange={(value) => set('sellingPrice', value)} placeholder={t("Optional")} />
+      </div><label className="total-cost-toggle"><input type="checkbox" checked={combinedCost} onChange={(e) => setCombinedCost(e.target.checked)} /><span>This price is for all items combined (total cost)</span></label></section>
+      <section className="product-form-section"><h3>STORAGE AND SUPPLIER</h3><div className="product-form-grid storage-grid">
+        <Field label={<>{t('Branch')} <i>*</i></>}><select required value={form.branchId || ''} onChange={(e) => { const branch = branches.find((item) => item._id === e.target.value); setForm((current) => ({ ...current, branchId: e.target.value, location: branch?.name || current.location })) }}><option value="">{t('Select branch')}</option>{branches.filter((branch) => branch.status === 'ACTIVE' || branch._id === form.branchId).map((branch) => <option key={branch._id} value={branch._id}>{branch.name}</option>)}</select></Field>
+        <Field label={<>{t('Storage location')} <i>*</i></>}><input required placeholder="e.g. Shelf A2, Back store" value={form.location} onChange={(e) => set('location', e.target.value)} /></Field>
+        <Field label="Supplier (name or phone number)"><input placeholder="e.g. Apple Store or 0788123456" value={form.supplier} onChange={(e) => set('supplier', e.target.value)} /></Field>
+      </div><p className="form-hint">Shown when this product is chosen during a sale.</p></section>
+      {editingId && <div className="product-meta">Added {form.createdAt ? new Date(form.createdAt).toLocaleDateString() : 'â€”'} Â· {form.addedBy?.name || form.addedBy?.fullName || auth.user?.name || 'â€”'} Â· Updated {form.updatedAt ? new Date(form.updatedAt).toLocaleString() : 'â€”'}</div>}
+      <div className="form-actions"><button type="button" className="button secondary" onClick={() => { setFormOpen(false); navigate('/products') }}>Cancel / Back</button><button className="button" disabled={saving}>{saving ? 'Saving...' : 'Record New Product'}</button></div></form></Card></>}
+    {!formOpen && <><div className="product-catalog-filters"><label className="catalog-search"><Search size={14} /><input placeholder="Search products..." value={filters.search} onChange={(e) => { setFilters({ ...filters, search: e.target.value }); setPage(1) }} /></label><select value={filters.brand} onChange={(e) => { setFilters({ ...filters, brand: e.target.value }); setPage(1) }}><option value="">All Brands</option>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select><select value={filters.category} onChange={(e) => { setFilters({ ...filters, category: e.target.value }); setPage(1) }}><option value="">All Categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><select value={filters.status} onChange={(e) => { setFilters({ ...filters, status: e.target.value }); setPage(1) }}><option value="">All Statuses</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select><select value={filters.branchId} onChange={(e) => { setFilters({ ...filters, branchId: e.target.value }); setPage(1) }}><option value="">All Branches</option>{branches.map((branch) => <option key={branch._id} value={branch._id}>{branch.name}</option>)}</select><select value={filters.sort || 'latest'} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}><option value="latest">Sort: Latest Added</option><option value="oldest">Sort: Oldest Added</option><option value="name">Sort: Product Name</option></select></div>
+    {cardView ? <div className="product-card-grid">{list.loading && <Card className="catalog-state">Loading products...</Card>}{list.error && <Notice tone="error">{list.error}</Notice>}{!list.loading && !list.error && pageRows.map((product) => { const low = Number(product.quantity) > 0 && Number(product.quantity) <= Number(product.lowStockLevel); return <article className="catalog-product-card" key={product._id}><div className="catalog-image"><div className="catalog-image-placeholder"><Package size={38} /><span>{product.category || 'PRODUCT'}</span></div><input type="checkbox" checked={selectedRows.includes(product._id)} onChange={() => toggleRow(product._id)} aria-label={`Select ${product.name}`} /><span className="catalog-category">{product.category || 'PRODUCT'}</span></div><div className="catalog-product-body"><div className="catalog-product-title"><strong>{product.brand || 'Product'}</strong><span>{product.location || 'â€”'}</span></div><p className="catalog-model">{product.name}{product.description ? ` Â· Model: ${product.description}` : ''}</p><div className="catalog-stock-row"><span>Quantity<br /><b>{product.quantity} {product.unit || 'pcs'}</b></span><span>Status<br /><b className={product.status === 'ACTIVE' ? (low ? 'text-low' : 'text-in-stock') : 'text-inactive'}>{product.status === 'ACTIVE' ? (Number(product.quantity) === 0 ? 'Out of Stock' : low ? 'Low Stock' : 'In Stock') : 'Inactive'}</b></span></div><div className="catalog-price-row"><span>Price on Sale<br /><b>{money(product.sellingPrice)} RWF</b></span><span>Confirmed<br /><b className="text-confirmed">Yes</b></span></div><div className="catalog-cost-row"><span>Cost Price<br /><b>{money(product.costPrice)} RWF</b></span><span>Total Value<br /><b>{money(Number(product.costPrice || 0) * Number(product.quantity || 0))} RWF</b></span></div></div><div className="catalog-product-actions">{canManageBusiness(auth.user) && <><button type="button" className="catalog-status-button" onClick={() => setStatus(product)}><span>â–³</span> {product.status === 'ACTIVE' ? 'Unconfirm' : 'Confirm'}</button><button title="Edit product" onClick={() => startEdit(product)}><Edit2 size={13} /></button><button title="Duplicate product" onClick={() => duplicate(product)}><Copy size={13} /></button><button title="View product" onClick={() => startEdit(product)}><Eye size={13} /></button></>}<NavLink title="Record sale" to="/transactions/new"><ShoppingCart size={13} /></NavLink>{canManageBusiness(auth.user) && <button title="Delete product" className="delete-action" onClick={() => remove(product)}><Trash2 size={13} /></button>}</div></article> })}{!list.loading && !list.error && !pageRows.length && <Card className="catalog-state">No products found.</Card>}</div> : <Card className="recent"><div className="table-wrap"><table className="product-table"><thead><tr>{['Product name','SKU','Category','Brand','Selling price','Cost price','Quantity in stock','Storage location','Status','Actions'].map((col) => <th key={col}>{col}</th>)}</tr></thead><tbody><TableState loading={list.loading} error={list.error} empty={!pageRows.length} colSpan={10} />{pageRows.map((product) => <tr key={product._id}><td><strong>{product.name}</strong></td><td>{product.sku || 'â€”'}</td><td>{product.category || 'â€”'}</td><td>{product.brand || 'â€”'}</td><td>{money(product.sellingPrice)} RWF</td><td>{money(product.costPrice)} RWF</td><td>{product.quantity} {product.unit}</td><td>{product.location}</td><td><span className={product.status === 'ACTIVE' ? 'stock-badge active' : 'stock-badge inactive'}>{product.status === 'ACTIVE' ? 'Active' : 'Inactive'}</span>{Number(product.quantity) === 0 ? <span className="stock-badge out">Out of Stock</span> : Number(product.quantity) <= Number(product.lowStockLevel) && <span className="stock-badge low">Low Stock</span>}</td><td>{canManageBusiness(auth.user) && <><button className="row-action" aria-label="Edit product" onClick={() => startEdit(product)}><Edit2 size={16} /></button><button className="row-action" aria-label="Delete product" onClick={() => remove(product)}><Trash2 size={16} /></button></>}</td></tr>)}</tbody></table></div></Card>}
+    <div className="catalog-pagination"><span>Showing {visibleRows.length ? (page - 1) * pageSize + 1 : 0} to {Math.min(page * pageSize, visibleRows.length)} of {visibleRows.length} products</span><select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}><option value="10">10 per page</option><option value="25">25 per page</option><option value="50">50 per page</option></select><div><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>â€¹ Previous</button><b>{page}</b><button disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)}>Next â€º</button></div></div></>}
+  </div></AppShell>
+}
+
+const newSaleLine = () => ({ key: `${Date.now()}-${Math.random()}`, productId: '', search: '', quantity: 1, unitPrice: 0, costPrice: 0, unit: 'â€”' })
+
+function NewTransaction({ auth }) {
+  const { t } = useContext(PreferencesContext)
+  const sync = useOfflineSync()
+  const navigate = useNavigate()
+  const [customerName, setCustomerName] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('CASH')
+  const [items, setItems] = useState([newSaleLine()])
+  const [activeSearch, setActiveSearch] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [refresh, setRefresh] = useState(0)
+  const products = useApi('/products', { params: { status: 'ACTIVE', refresh }, initial: [] })
+  const recent = useApi('/transactions', { params: { limit: 30, refresh }, initial: [], refreshMs: liveRefreshMs })
+  const allProducts = products.data?.length
+    ? products.data.map((product) => ({ ...product, quantity: sync.products.find((cached) => String(cached._id || cached.id) === String(product._id))?.quantity ?? product.quantity }))
+    : sync.products
+  useEffect(() => {
+    if (recent.data?.length && auth.user) cacheSalesHistory(auth.user._id || auth.user.id, recent.data).then(sync.refreshSnapshot).catch(() => {})
+  }, [recent.data, auth.user, sync.refreshSnapshot])
+  const historyIds = new Set(sync.snapshot.history.map((row) => String(row._id || row.id)))
+  const recentRows = [...sync.snapshot.history, ...(recent.data || []).filter((row) => !historyIds.has(String(row._id)))].sort((left, right) => new Date(right.transactionDate || right.date || right.createdAt) - new Date(left.transactionDate || left.date || left.createdAt)).slice(0, 30)
+  const revenue = items.reduce((sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0), 0)
+  const profit = items.reduce((sum, item) => sum + (Number(item.unitPrice || 0) - Number(item.costPrice || 0)) * Number(item.quantity || 0), 0)
+  const selectedFor = (item) => allProducts.find((product) => idOf(product) === item.productId)
+  const updateItem = (key, change) => setItems((current) => current.map((item) => item.key === key ? { ...item, ...change } : item))
+  const quantitiesByProduct = items.reduce((totals, item) => item.productId ? { ...totals, [item.productId]: Number(totals[item.productId] || 0) + Number(item.quantity || 0) } : totals, {})
+  const stockError = items.some((item) => !item.productId || Number(item.quantity) < 1 || Number(item.quantity) > Number(selectedFor(item)?.quantity || 0)) || Object.entries(quantitiesByProduct).some(([productId, quantity]) => quantity > Number(allProducts.find((product) => idOf(product) === productId)?.quantity || 0))
+  const searchResults = (query) => allProducts.filter((product) => `${product.name} ${product.sku || ''} ${product.brand || ''} ${product.category || ''}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8)
 
   const submit = async (event) => {
     event.preventDefault(); setError(''); setMessage('')
+    if (stockError) { setError('Choose a product for each line and keep quantities within available stock.'); return }
+    setSaving(true)
     try {
-      await api.post('/transactions', { ...form, transactionDate: new Date().toISOString() })
-      setMessage('Transaction saved successfully.')
-      setForm(emptyTransaction)
-    } catch (error) {
-      setError(apiMessage(error))
-    }
+      const operationId = crypto.randomUUID()
+      await sync.enqueue({ operationId, kind: 'sale', payload: { customerName: customerName.trim() || 'General', paymentMethod, transactionDate: new Date().toISOString(), items: items.map((item) => {
+        const product = selectedFor(item)
+        return { productId: item.productId, productName: product?.name, sku: product?.sku || '', category: product?.category || '', unitCost: Number(product?.costPrice || 0), quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) }
+      }) } })
+      let successMessage = 'Sale saved on this device and queued for synchronization.'
+      if (sync.online) {
+        await sync.syncNow()
+        const remaining = await offlineDb.operations.get(operationId)
+        if (!remaining) successMessage = 'Sale recorded successfully.'
+        else if (remaining.status === 'conflict') successMessage = `Sale saved locally but needs review: ${remaining.lastError}`
+        else if (remaining.status === 'error') successMessage = `Sale saved locally but needs attention: ${remaining.lastError}`
+      }
+      setMessage(successMessage)
+      setCustomerName(''); setPaymentMethod('CASH'); setItems([newSaleLine()]); setRefresh((value) => value + 1)
+    } catch (submitError) { setError(apiMessage(submitError)) } finally { setSaving(false) }
   }
 
-  return <AppShell title="New transaction" auth={auth}><div className="page-content">
-    <Card className="form-card"><SectionTitle title="Add transaction" text="Record a sale." />
-      {message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
-      <form onSubmit={submit}>
-        <div className="form-grid">
-          <Field label="Product name"><input required value={form.productName} onChange={(e) => setForm({ ...form, productName: e.target.value })} /></Field>
-          <Field label="Amount"><input required min="0" type="number" value={form.paidAmount} onChange={(e) => setForm({ ...form, paidAmount: e.target.value })} /></Field>
-          <Field label="Cash Out"><input required min="0" type="number" value={form.cashOut} onChange={(e) => setForm({ ...form, cashOut: e.target.value })} /></Field>
-          <Field label="Cash In"><input readOnly value={money(cashInFor(form))} /></Field>
-          <Field label="Amount rest"><input required min="0" type="number" value={form.remainingAmount} onChange={(e) => setForm({ ...form, remainingAmount: e.target.value })} /></Field>
-          <Field label="Payment method"><Select value={form.paymentMethod} onChange={(paymentMethod) => setForm({ ...form, paymentMethod })} /></Field>
-          <Field label="Description"><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
-        </div>
-        <div className="form-actions"><button type="button" className="button secondary" onClick={() => navigate('/transactions')}>Cancel</button><button className="button">Save transaction</button></div>
-      </form>
-    </Card>
+  return <AppShell title="Record Product Sale" auth={auth} saleHeader><div className="page-content sale-page">
+    <div className="sale-page-heading"><div><h2>Record Sale</h2><p>Fill in customer and payment type, add items to list, and click Record Sale.</p></div><NavLink to="/sold-products">â† View All Sold Products</NavLink></div>
+    {message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
+    {products.error && sync.products.length === 0 && <Notice tone="error">{products.error || 'Could not load products. Check your connection and try again.'} <button type="button" className="button secondary" onClick={() => setRefresh((value) => value + 1)}>{t('Retry')}</button></Notice>}
+    {!products.loading && !products.error && !allProducts.length && <Notice>No active products are available. Add a product before recording a sale.</Notice>}
+    <form onSubmit={submit}>
+      <Card className="sale-details-card"><Field label="Customer (Name, Phone, or TIN Number)"><input placeholder="e.g. KEZA ALICIA, 0788123456, or TIN: 700890000" value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></Field><Field label={<>Payment Type<i>*</i></>}><select required value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="CASH">Cash</option><option value="MOMO">Mobile Money</option></select></Field></Card>
+      <Card className="sale-items-card"><div className="sale-items-heading"><h3>Sale item list</h3><span>{items.length} Item Line(s)</span></div>
+        {items.map((item, index) => {
+          const product = selectedFor(item)
+          const itemRevenue = Number(item.quantity || 0) * Number(item.unitPrice || 0)
+          const itemProfit = Number(item.quantity || 0) * (Number(item.unitPrice || 0) - Number(item.costPrice || 0))
+          return <div className="sale-line" key={item.key}><div className="sale-line-number">#{index + 1}</div><label className="sale-product-field"><span>Item name<i>*</i></span><div className="product-search-control"><input required placeholder="Search product by name, code, brand..." value={item.search} onFocus={() => setActiveSearch(item.key)} onChange={(event) => { updateItem(item.key, { search: event.target.value, productId: '' }); setActiveSearch(item.key) }} /><Search size={17} /></div>{activeSearch === item.key && item.search && <div className="sale-product-results">{searchResults(item.search).map((option) => <button type="button" key={option._id} onClick={() => { updateItem(item.key, { productId: option._id, search: option.name, unitPrice: option.sellingPrice, costPrice: option.costPrice || 0, unit: option.unit || 'Pieces (pcs)' }); setActiveSearch('') }}><strong>{option.name}</strong><span>{option.sku || option.brand || 'Product'} Â· {option.quantity} in stock Â· {money(option.sellingPrice)} RWF</span></button>)}{!searchResults(item.search).length && <p>No matching products.</p>}</div>}</label>
+            <div className="sale-line-fields"><Field label="Package"><input readOnly value={product?.unit || item.unit || 'â€”'} /></Field><Field label={<>Quantity<i>*</i></>}><input required min="1" max={product?.quantity} type="number" value={item.quantity} onChange={(event) => updateItem(item.key, { quantity: event.target.value })} /></Field><MoneyField label={<>Unit price<i>*</i></>} required value={item.unitPrice} onChange={(value) => updateItem(item.key, { unitPrice: value })} /></div>
+            {product && <div className={Number(item.quantity) > Number(product.quantity) ? 'sale-stock-note error-text' : 'sale-stock-note'}>{Number(item.quantity) > Number(product.quantity) ? `Only ${product.quantity} ${product.unit || 'pcs'} in stock.` : `In stock: ${product.quantity} ${product.unit || 'pcs'} Â· ${product.location}`}</div>}
+            <div className="sale-line-totals"><span>Total Revenue: <b>{money(itemRevenue)} RWF</b></span><span>Total Profits: <b>{money(itemProfit)} RWF</b></span>{items.length > 1 && <button type="button" onClick={() => setItems((current) => current.filter((row) => row.key !== item.key))}>Remove</button>}</div>
+          </div>
+        })}
+        <div className="sale-add-line"><button type="button" aria-label="Add sale item" onClick={() => setItems((current) => [...current, newSaleLine()])}><Plus size={18} /></button></div>
+      </Card>
+      <div className="sale-submit-row"><div>TOTAL REVENUE: <b>{money(revenue)} RWF</b><span>Â·</span> TOTAL PROFITS: <b>{money(profit)} RWF</b></div><button type="button" className="button secondary" onClick={() => navigate('/dashboard')}>{t("Cancel")}</button><button className="button" disabled={saving || stockError}>{saving ? 'Recording...' : 'Record Sale'}</button></div>
+    </form>
+    <Card className="recent sale-recent"><SectionTitle title="Recently Sold Products Data" text="Saved on this device for 90 days." action={<button className="button secondary" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>} /><div className="table-wrap"><table className="sale-history-table"><thead><tr>{['Date','Customer','Product Name','Code','Qty','Unit Price','Total Revenue','Profits','Payment','Sync status'].map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody><TableState loading={recent.loading && sync.online} error={!sync.online ? '' : recent.error} empty={!recentRows.length} colSpan={10} />{recentRows.map((row) => { const soldProduct = row.productId || {}; const unitCost = Number(row.unitCost ?? soldProduct?.costPrice ?? 0); const soldRevenue = Number(row.totalAmount || row.unitPrice * row.quantity || 0); const soldProfit = soldRevenue - unitCost * Number(row.quantity || 1); return <tr key={row._id || row.id}><td>{new Date(row.transactionDate || row.date || row.createdAt).toLocaleString()}</td><td>{row.customerName || 'General'}</td><td><strong>{soldProduct?.name || row.serviceOrProduct}</strong></td><td>{soldProduct?.sku || 'â€”'}</td><td>{row.quantity || 1}</td><td>{money(row.unitPrice)} RWF</td><td>{money(soldRevenue)} RWF</td><td className="profit-value">{money(soldProfit)} RWF</td><td>{row.paymentMethod === 'MOMO' ? 'Mobile Money' : 'Cash'}</td><td>{row.status === 'pending' ? 'Pending' : row.status === 'conflict' ? 'Conflict' : row.status === 'error' ? 'Needs attention' : 'Synced'}</td></tr> })}</tbody></table></div></Card>
   </div></AppShell>
 }
 
 function Field({ label, children }) {
-  return <label><span>{label}</span>{children}</label>
+  const { t } = useContext(PreferencesContext)
+  return <label><span>{localizeNode(label, t)}</span>{localizeNode(children, t)}</label>
+}
+
+function ProductChoice({ label, value, options, onChange, onAdd, required = false, wide = false }) {
+  const { t } = useContext(PreferencesContext)
+  return <div className={'product-choice' + (wide ? ' wide' : '')}>
+    <div className="product-choice-heading"><span>{t(label)}{required && <> <i>*</i></>}</span><button type="button" onClick={onAdd}>{t('+ Add new')}</button></div>
+    <select required={required} value={value} onChange={(event) => onChange(event.target.value)}>
+      <option value="">{t('Select')} {t(label.toLowerCase())}</option>
+      {options.map((option) => <option key={option} value={option}>{option}</option>)}
+    </select>
+  </div>
+}
+
+function MoneyField({ label, value, onChange, required = false, placeholder = '0' }) {
+  const { t } = useContext(PreferencesContext)
+  return <label className="money-field"><span>{localizeNode(label, t)}</span><div><b>RWF</b><input required={required} min="0" type="number" placeholder={t(placeholder)} value={value} onChange={(event) => onChange(event.target.value)} /></div></label>
 }
 
 function Select({ value, onChange }) {
-  return <select required value={value} onChange={(e) => onChange(e.target.value)}><option value="MOMO">MoMo Pay</option><option value="CASH">Cash</option></select>
+  const { t } = useContext(PreferencesContext)
+  return <select required value={value} onChange={(e) => onChange(e.target.value)}><option value="MOMO">{t("MoMo Pay")}</option><option value="CASH">{t("Cash")}</option></select>
 }
 
 function Hero({ title, text, action, actionText }) {
-  return <Card className="page-hero"><div><p className="eyebrow">MANAGEMENT</p><h2>{title}</h2><p>{text}</p></div>{action && <div className="hero-buttons"><NavLink className="button" to={action}><Plus size={17} /> {actionText}</NavLink></div>}</Card>
+  const { t } = useContext(PreferencesContext)
+  return <Card className="page-hero"><div><p className="eyebrow">{t('MANAGEMENT')}</p><h2>{t(title)}</h2><p>{t(text)}</p></div>{action && <div className="hero-buttons"><NavLink className="button" to={action}><Plus size={17} /> {t(actionText)}</NavLink></div>}</Card>
 }
 
 function ReportsPage({ auth }) {
@@ -454,15 +900,18 @@ function ReportsPage({ auth }) {
 
   return <AppShell title="Reports" auth={auth}><div className="page-content">
     <Card className="page-hero"><div><p className="eyebrow">REPORTING</p><h2>Daily reports</h2><p>Totals update automatically from saved transactions.</p></div><div className="hero-buttons"><button className="button" onClick={downloadReport}>Download report</button></div></Card>
-    <DateControls range={range} setRange={setRange} compact />
+    <DateControls range={range} setRange={setRange} compact onSearch={() => setRefresh((value) => value + 1)} />
     <div className="stat-grid report-stats">{[
-      ['Total amount', data.totalAmount ?? data.totalPaid], ['Total Cash Out', data.totalCashOut], ['Total Cash In', data.totalCashIn ?? data.totalMoneyEarned], ['Total remaining money', data.totalRemainingMoney ?? data.totalRemaining], ['Cash received', data.totalCash], ['MoMo Pay received', data.totalMomo],
+      ['Total amount', data.totalAmount ?? data.totalPaid], ['Total Cash Out', data.totalCashOut], ['Total Cash In', data.totalCashIn ?? data.totalMoneyEarned], ['Total remaining money', data.totalRemainingMoney ?? data.totalRemaining], ['Cash received', data.totalCash], ['MoMo Pay received', data.totalMomo], ['Current stock value', data.currentStockValue],
     ].map(([label, value]) => <Card className="stat-card" key={label}><p>{label}</p><h2>{money(value)} <small>RWF</small></h2></Card>)}</div>
+    <Card className="recent"><SectionTitle title="Best-selling products" text="Ranked by quantity sold in the selected period" /><div className="table-wrap"><table className="simple-table"><thead><tr><th>Product</th><th>SKU</th><th>Quantity sold</th><th>Sales</th></tr></thead><tbody>{(data.bestSellingProducts || []).length ? data.bestSellingProducts.map((item) => <tr key={item.productId}><td><strong>{item.name}</strong></td><td>{item.sku || 'â€”'}</td><td>{item.quantitySold}</td><td>{money(item.sales)} RWF</td></tr>) : <tr><td colSpan="4" className="empty-cell">No product sales for this period.</td></tr>}</tbody></table></div></Card>
     <Card className="recent"><SectionTitle title="Sales report" text="Transactions for the selected device date" action={<button className="button" onClick={() => setAdding(true)}><Plus size={16} /> Add row</button>} /><TransactionTable rows={data.transactions || []} loading={report.loading} error={report.error} adding={adding} draft={draft} setDraft={setDraft} onSave={saveRow} onCancel={() => { setAdding(false); setDraft(emptyTransaction) }} saving={saving} onUpdate={updateTransaction} onDelete={deleteTransaction} currentUser={auth.user} /></Card>
   </div></AppShell>
 }
 
 function ResourcePage({ auth, type, title }) {
+  const { t } = useContext(PreferencesContext)
+  const sync = useOfflineSync()
   const endpoints = {
     expenses: '/expenses',
     users: '/users',
@@ -515,11 +964,22 @@ function ResourcePage({ auth, type, title }) {
   const saveStockRow = async () => {
     setSaving(true); setMessage(''); setError('')
     try {
-      await api.post(endpoints[type], normalizeForm(type, rowDraft))
+      const data = normalizeForm(type, rowDraft)
+      if (!data.productId && !sync.online) throw new Error('Choose a product to import stock while offline.')
+      if (data.productId && data.stockQuantity > 0) {
+        const operationId = crypto.randomUUID()
+        await sync.enqueue({ operationId, kind: 'import', payload: { ...data, expenseDate: new Date().toISOString() } })
+        if (sync.online) await sync.syncNow()
+        const remaining = await offlineDb.operations.get(operationId)
+        setMessage(!remaining ? 'Imported stock saved and synchronized.' : remaining.status === 'conflict' ? `Import saved locally but needs review: ${remaining.lastError}` : 'Imported stock saved on this device and queued for synchronization.')
+      } else {
+        if (!sync.online) throw new Error('Offline imports need a product and a quantity greater than zero.')
+        await api.post(endpoints[type], data)
+        setMessage('Imported stock saved.')
+      }
       setRowDraft(emptyStock)
       setAddingRow(false)
       setRefresh((x) => x + 1)
-      setMessage('Imported stock saved.')
     } catch (error) {
       setError(apiMessage(error))
     } finally {
@@ -548,15 +1008,16 @@ function ResourcePage({ auth, type, title }) {
 
   return <AppShell title={title} auth={auth}><div className="page-content">
     {type === 'expenses' ? <Card className="page-hero"><div><p className="eyebrow">MANAGEMENT</p><h2>{title}</h2><p>Imported stock by selected date.</p></div><div className="hero-buttons"><button className="button" onClick={downloadStockReport}>Download report</button></div></Card> : <Hero title={title} text={type === 'logs' ? 'Review team activity across the system.' : `Manage ${title.toLowerCase()} from the live database.`} />}
-    {type === 'expenses' && <DateControls range={range} setRange={setRange} compact />}
+    {type === 'expenses' && <DateControls range={range} setRange={setRange} compact onSearch={() => setRefresh((value) => value + 1)} />}
     {message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
-    {type === 'users' && <Card className="form-card compact-form"><SectionTitle title={editingId ? 'Edit user' : 'Add user'} text="Username, phone number, and PIN only." /><form onSubmit={submit}><ResourceFields type={type} form={form} setForm={setForm} editing={Boolean(editingId)} /><div className="form-actions">{editingId && <button type="button" className="button secondary" onClick={() => { setEditingId(''); setForm({}) }}>Cancel edit</button>}<button className="button" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button></div></form></Card>}
+    {type === 'expenses' && sync.snapshot.operations.some((operation) => operation.kind === 'import') && <Card className="recent offline-import-queue"><SectionTitle title="Offline imports" text="Queued imports are kept on this device until confirmed by the server." /><div className="table-wrap"><table><thead><tr><th>Product</th><th>Quantity</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead><tbody>{sync.snapshot.operations.filter((operation) => operation.kind === 'import').map((operation) => { const product = sync.products.find((row) => String(row._id || row.id) === String(operation.payload.productId)); return <tr key={operation.operationId}><td>{product?.name || 'Product'}</td><td>{operation.payload.stockQuantity}</td><td>{operation.payload.description}</td><td>{money(operation.payload.amount)} RWF</td><td>{operation.status === 'pending' ? 'Pending sync' : operation.status === 'conflict' ? 'Conflict' : 'Needs attention'}</td></tr> })}</tbody></table></div></Card>}
+    {type === 'users' && <Card className="form-card compact-form"><SectionTitle title={editingId ? 'Edit user' : 'Add user'} text="Username, phone number, and PIN only." /><form onSubmit={submit}><ResourceFields type={type} form={form} setForm={setForm} editing={Boolean(editingId)} /><div className="form-actions">{editingId && <button type="button" className="button secondary" onClick={() => { setEditingId(''); setForm({}) }}>Cancel edit</button>}<button className="button" disabled={saving}>{saving ? t("Saving...") : t("Save")}</button></div></form></Card>}
     <Card className="recent"><SectionTitle title={`All ${title.toLowerCase()}`} text={type === 'expenses' ? 'Inventory purchases' : 'Live records from MongoDB'} action={type === 'expenses' && <button className="button" onClick={() => setAddingRow(true)}><Plus size={16} /> Add row</button>} /><ResourceTable type={type} rows={data || []} loading={(type === 'logs' ? resource : list).loading} error={(type === 'logs' ? resource : list).error} onDelete={remove} onEdit={type === 'expenses' ? undefined : edit} onUpdate={type === 'expenses' ? updateStockRow : undefined} adding={addingRow} draft={rowDraft} setDraft={setRowDraft} onSave={saveStockRow} onCancel={() => { setAddingRow(false); setRowDraft(emptyStock) }} saving={saving} currentUser={auth.user} /></Card>
   </div></AppShell>
 }
 
 function normalizeForm(type, form, editing = false) {
-  if (type === 'expenses') return { description: form.description, amount: Number(form.amount || 0), paymentMethod: form.paymentMethod || 'CASH' }
+  if (type === 'expenses') return { description: form.description, amount: Number(form.amount || 0), paymentMethod: form.paymentMethod || 'CASH', productId: form.productId || undefined, stockQuantity: Number(form.stockQuantity || 0) }
   const data = { username: form.username, phoneNumber: form.phoneNumber }
   if (!editing || form.pin) data.pin = form.pin
   return data
@@ -569,18 +1030,24 @@ function ResourceFields({ type, form, setForm, editing = false }) {
 }
 
 function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUpdate, adding = false, draft = emptyStock, setDraft, onSave, onCancel, saving = false, currentUser }) {
+  const { t } = useContext(PreferencesContext)
+  const offlineSync = useOfflineSync()
   const [editingId, setEditingId] = useState('')
   const [editDraft, setEditDraft] = useState(emptyStock)
   const [editing, setEditing] = useState(false)
+  const products = useApi('/products', { params: { status: 'ACTIVE' }, initial: [], enabled: type === 'expenses' })
+  const productOptions = products.data?.length
+    ? products.data.map((product) => ({ ...product, quantity: offlineSync.products.find((cached) => String(cached._id || cached.id) === String(product._id))?.quantity ?? product.quantity }))
+    : offlineSync.products
   const cols = {
-    expenses: ['Date', 'User', 'What imported', 'Amount', 'Payment method'],
+    expenses: ['Date', 'User', 'Product', 'Quantity', 'What imported', 'Amount', 'Payment method'],
     users: ['Username', 'Phone number'],
     logs: ['Action', 'Description', 'User', 'Time'],
   }[type]
   const stockTotal = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0)
   const startStockEdit = (row) => {
     setEditingId(row._id)
-    setEditDraft({ description: row.description || '', amount: row.amount ?? '', paymentMethod: row.paymentMethod || 'CASH' })
+    setEditDraft({ description: row.description || '', amount: row.amount ?? '', paymentMethod: row.paymentMethod || 'CASH', productId: idOf(row.productId), stockQuantity: row.stockQuantity ?? '' })
   }
   const saveStockEdit = async () => {
     setEditing(true)
@@ -592,36 +1059,106 @@ function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUp
       setEditing(false)
     }
   }
-  return <div className="table-wrap"><table className={`resource-table resource-${type}`}><thead><tr>{cols.map((c) => <th key={c}>{c}</th>)}<th></th></tr></thead><tbody>
+  return <div className="table-wrap"><table className={`resource-table resource-${type}`}><thead><tr>{cols.map((c) => <th key={c}>{t(c)}</th>)}<th></th></tr></thead><tbody>
     {type === 'expenses' && adding && <tr className="inline-row">
-      <td>Today</td>
-      <td>Me</td>
+      <td>{t("Today")}</td>
+      <td>{t("Me")}</td>
+      <td><select value={draft.productId || ''} onChange={(e) => setDraft({ ...draft, productId: e.target.value })}><option value="">Unlinked import</option>{productOptions.map((product) => <option key={product._id || product.id} value={product._id || product.id}>{product.name}</option>)}</select></td>
+      <td><input min="0" type="number" value={draft.stockQuantity || ''} onChange={(e) => setDraft({ ...draft, stockQuantity: e.target.value })} placeholder="0" /></td>
       <td><input required value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Imported item" /></td>
       <td><input required min="1" type="number" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} placeholder="0" /></td>
       <td><Select value={draft.paymentMethod} onChange={(paymentMethod) => setDraft({ ...draft, paymentMethod })} /></td>
-      <td className="row-buttons"><button className="button" onClick={onSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button><button className="button secondary" onClick={onCancel}>Cancel</button></td>
+      <td className="row-buttons"><button className="button" onClick={onSave} disabled={saving}>{saving ? t("Saving...") : t("Save")}</button><button className="button secondary" onClick={onCancel}>{t("Cancel")}</button></td>
     </tr>}
     <TableState loading={loading} error={error} empty={!rows.length && !adding} colSpan={cols.length + 1} />
     {rows.map((row) => type === 'expenses' && editingId === row._id ? <tr key={row._id} className="inline-row">
       <td>{new Date(row.expenseDate || row.date || row.createdAt).toLocaleDateString()}</td>
       <td>{row.createdBy?.fullName || row.createdBy?.name || '-'}</td>
+      <td><select value={editDraft.productId || ''} onChange={(e) => setEditDraft({ ...editDraft, productId: e.target.value })}><option value="">Unlinked import</option>{productOptions.map((product) => <option key={product._id || product.id} value={product._id || product.id}>{product.name}</option>)}</select></td>
+      <td><input min="0" type="number" value={editDraft.stockQuantity || ''} onChange={(e) => setEditDraft({ ...editDraft, stockQuantity: e.target.value })} /></td>
       <td><input required value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} /></td>
       <td><input required min="1" type="number" value={editDraft.amount} onChange={(e) => setEditDraft({ ...editDraft, amount: e.target.value })} /></td>
       <td><Select value={editDraft.paymentMethod} onChange={(paymentMethod) => setEditDraft({ ...editDraft, paymentMethod })} /></td>
-      <td className="row-buttons"><button className="button" onClick={saveStockEdit} disabled={editing}>{editing ? 'Saving...' : 'Save'}</button><button className="button secondary" onClick={() => setEditingId('')}>Cancel</button></td>
-    </tr> : <tr key={row._id}>{resourceCells(type, row).map((cell, i) => <td key={i}>{cell}</td>)}<td>{type === 'expenses' && onUpdate && isOwnRow(row, currentUser) && <button className="row-action" onClick={() => startStockEdit(row)}><Edit2 size={16} /></button>}{type === 'users' && onEdit && <button className="row-action" onClick={() => onEdit(row)}><Edit2 size={16} /></button>}{type !== 'logs' && onDelete && (type !== 'expenses' || isOwnRow(row, currentUser)) && <button className="row-action" onClick={() => confirmDelete() && onDelete(row._id)}><Trash2 size={16} /></button>}</td></tr>)}
-    {type === 'expenses' && <tr className="total-row"><td colSpan="3">Total</td><td>{money(stockTotal)} <small>RWF</small></td><td colSpan="2"></td></tr>}
+      <td className="row-buttons"><button className="button" onClick={saveStockEdit} disabled={editing}>{editing ? t("Saving...") : t("Save")}</button><button className="button secondary" onClick={() => setEditingId('')}>{t("Cancel")}</button></td>
+    </tr> : <tr key={row._id}>{resourceCells(type, row, t).map((cell, i) => <td key={i}>{cell}</td>)}<td>{type === 'expenses' && onUpdate && isOwnRow(row, currentUser) && <button className="row-action" onClick={() => startStockEdit(row)}><Edit2 size={16} /></button>}{type === 'users' && onEdit && <button className="row-action" onClick={() => onEdit(row)}><Edit2 size={16} /></button>}{type !== 'logs' && onDelete && (type !== 'expenses' || isOwnRow(row, currentUser)) && <button className="row-action" onClick={() => confirmDelete() && onDelete(row._id)}><Trash2 size={16} /></button>}</td></tr>)}
+    {type === 'expenses' && <tr className="total-row"><td colSpan="5">Total</td><td>{money(stockTotal)} <small>RWF</small></td><td colSpan="2"></td></tr>}
   </tbody></table></div>
 }
 
-function resourceCells(type, row) {
-  if (type === 'expenses') return [new Date(row.expenseDate || row.date || row.createdAt).toLocaleDateString(), row.createdBy?.fullName || row.createdBy?.name || '-', <strong key="description">{row.description}</strong>, `${money(row.amount)} RWF`, row.paymentMethod === 'MOMO' ? 'MoMo Pay' : 'Cash']
+function resourceCells(type, row, t) {
+  if (type === 'expenses') return [new Date(row.expenseDate || row.date || row.createdAt).toLocaleDateString(), row.createdBy?.fullName || row.createdBy?.name || '-', row.productId?.name || '-', row.stockQuantity || 0, <strong key="description">{row.description}</strong>, `${money(row.amount)} RWF`, row.paymentMethod === 'MOMO' ? t('MoMo Pay') : t('Cash')]
   if (type === 'users') return [<strong key="name">{row.fullName || row.name}</strong>, row.phoneNumber || '-']
   return [row.action, row.description, row.user?.fullName || row.user?.name || '-', new Date(row.timestamp).toLocaleString()]
 }
 
-function Protected({ children }) {
-  return sessionStorage.getItem('shop_report_token') ? children : <Navigate to="/login" replace />
+function Protected({ auth, children }) {
+  const location = useLocation()
+  const offlineAllowed = ['/transactions/new', '/expenses'].includes(location.pathname)
+  if (auth.offline && !navigator.onLine && !offlineAllowed) return <Navigate to="/transactions/new" replace />
+  const onlineSession = Boolean(sessionStorage.getItem('shop_report_token'))
+  return auth.user && (onlineSession || (auth.offline && offlineAllowed)) ? children : <Navigate to="/login" replace />
+}
+
+function WorkspaceInfoPage({ auth, title, description }) {
+  const { language, theme, setLanguage, setTheme, t } = useContext(PreferencesContext)
+  const isAccount = title === 'Account Information'
+  const isSettings = title === 'Settings'
+  const fullName = auth.user?.fullName || auth.user?.name || ''
+  const [firstName, ...lastParts] = fullName.trim().split(/\s+/)
+  const lastName = lastParts.join(' ')
+  return <AppShell title={title} auth={auth}><div className={'page-content' + (isAccount ? ' account-page-content' : '')}>{isAccount ? <>
+    <div className="account-page-heading"><div><h2>Account Information</h2><p>View and update your profile details and settings.</p></div><button type="button" className="button account-edit-button"><Pencil size={13} /> Edit</button></div>
+    <Card className="account-panel"><div className="account-profile"><div className="account-avatar-wrap"><div className="account-avatar"><CircleUserRound size={43} /></div><span>AVATAR</span></div><div className="account-details"><div><small>FIRST NAME</small><span>{firstName || 'â€”'}</span><small>GENDER</small><span>{auth.user?.gender || 'â€”'}</span><small>PHONE</small><span>{auth.user?.phoneNumber ? `+250${auth.user.phoneNumber.replace(/^0/, '')}` : 'â€”'}</span></div><div><small>LAST NAME</small><span>{lastName || 'â€”'}</span><small>EMAIL</small><span>{auth.user?.email || 'â€”'}</span><small>ROLE</small><span>{auth.user?.role || 'â€”'}</span></div></div></div>
+      <section className="account-password"><h3><LockKeyhole size={15} /> Change Password</h3><form onSubmit={(event) => event.preventDefault()}><label>CURRENT PASSWORD<input type="password" placeholder="Enter current password" autoComplete="current-password" /></label><label>NEW PASSWORD<input type="password" placeholder="Enter new password" autoComplete="new-password" /></label><label>CONFIRM NEW PASSWORD<input type="password" placeholder="Confirm new password" autoComplete="new-password" /></label><button type="submit" className="button">Update password</button></form></section>
+    </Card></> : <><Card className="page-hero"><div><p className="eyebrow">WORKSPACE</p><h2>{t(title)}</h2><p>{description}</p></div></Card>
+    {<Card className="form-card workspace-info">{isSettings ? <><SectionTitle title={t("Shop settings")} text={t("Review workspace preferences.")} /><div className="settings-preferences"><label>{t("Language")}<select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="en">{t("English")}</option><option value="rw">{t("Kinyarwanda")}</option></select></label><label>{t("Appearance")}<select value={theme} onChange={(event) => setTheme(event.target.value)}><option value="light">{t("Light")}</option><option value="dark">{t("Dark")}</option></select></label></div><dl><dt>{t("Currency")}</dt><dd>RWF</dd><dt>{t("Workspace")}</dt><dd>manageyourstock</dd></dl></> : <><SectionTitle title="Branches" text="Branch management" /><Notice>Branch management is not configured for this workspace yet.</Notice></>}</Card>}
+    </>}
+  </div></AppShell>
+}
+
+function BranchesPage({ auth }) {
+  const { t } = useContext(PreferencesContext)
+  const canManage = canManageBusiness(auth.user)
+  const [selectedId, setSelectedId] = useState('')
+  const [draft, setDraft] = useState(null)
+  const [error, setError] = useState('')
+  const [refresh, setRefresh] = useState(0)
+  const branches = useApi('/branches', { params: { refresh }, initial: [], refreshMs: liveRefreshMs })
+  const detail = useApi(selectedId ? `/branches/${selectedId}` : '/branches', { enabled: Boolean(selectedId), initial: null, params: { refresh } })
+  const selected = detail.data
+  const save = async (event) => {
+    event.preventDefault()
+    setError('')
+    try {
+      if (draft._id) await api.put(`/branches/${draft._id}`, draft)
+      else await api.post('/branches', draft)
+      setDraft(null)
+      setRefresh((value) => value + 1)
+    } catch (saveError) { setError(apiMessage(saveError)) }
+  }
+  const remove = async (branch) => {
+    if (!confirm(`Delete branch ${branch.name}?`)) return
+    try {
+      await api.delete(`/branches/${branch._id}`)
+      if (selectedId === branch._id) setSelectedId('')
+      setRefresh((value) => value + 1)
+    } catch (deleteError) { setError(apiMessage(deleteError)) }
+  }
+  const toggleStatus = async (branch) => {
+    try {
+      await api.put(`/branches/${branch._id}`, { ...branch, status: branch.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' })
+      setRefresh((value) => value + 1)
+    } catch (updateError) { setError(apiMessage(updateError)) }
+  }
+  return <AppShell title="Manage Branches" auth={auth}><div className="page-content">
+    <Card className="page-hero"><div><p className="eyebrow">{t('Workspace')}</p><h2>{t('Branch management')}</h2><p>{t('Create branches and review each branch’s stock, sales, and imports.')}</p></div>{canManage && <button className="button" onClick={() => setDraft({ name: '', code: '', address: '', phone: '', managerName: '', status: 'ACTIVE' })}><Plus size={15} /> {t('Add branch')}</button>}</Card>
+    {error && <Notice tone="error">{error}</Notice>}
+    {draft && <Card className="form-card branch-form-card"><SectionTitle title={t(draft._id ? 'Edit branch' : 'Add branch')} text={t('Branch records keep inventory and activity organized by location.')} /><form onSubmit={save}><div className="form-grid"><Field label={t('Branch name *')}><input required minLength={2} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></Field><Field label={t('Branch code')}><input value={draft.code} onChange={(event) => setDraft({ ...draft, code: event.target.value.toUpperCase() })} /></Field><Field label={t('Address')}><input value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} /></Field><Field label={t('Phone')}><input value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} /></Field><Field label={t('Branch manager')}><input value={draft.managerName} onChange={(event) => setDraft({ ...draft, managerName: event.target.value })} /></Field><Field label={t('Status')}><select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value })}><option value="ACTIVE">{t('Active')}</option><option value="INACTIVE">{t('Inactive')}</option></select></Field></div><div className="form-actions"><button type="button" className="button secondary" onClick={() => setDraft(null)}>{t('Cancel')}</button><button className="button">{t('Save branch')}</button></div></form></Card>}
+    {branches.loading && <Card className="recent">{t('Loading branches...')}</Card>}{branches.error && <Notice tone="error">{branches.error}</Notice>}
+    <div className="branch-card-grid">{(branches.data || []).map((branch) => <Card className={'branch-card' + (selectedId === branch._id ? ' selected' : '')} key={branch._id}><div className="branch-card-heading"><div><Building2 size={17} /><div><strong>{branch.name}</strong><small>{branch.code || branch.address || 'Branch'}</small></div></div><span className={'stock-badge ' + (branch.status === 'ACTIVE' ? 'active' : 'inactive')}>{branch.status}</span></div><div className="branch-metrics"><div><strong>{branch.inventory?.products || 0}</strong><span>Products</span></div><div><strong>{branch.inventory?.units || 0}</strong><span>Stock units</span></div><div><strong>{money(branch.inventory?.value || 0)} RWF</strong><span>Stock value</span></div><div><strong>{branch.inventory?.lowStock || 0}</strong><span>Low stock</span></div><div><strong>{money(branch.sales?.sales || 0)} RWF</strong><span>Sales</span></div><div><strong>{branch.sales?.count || 0}</strong><span>Sales records</span></div></div><div className="branch-card-actions"><button className="button secondary" onClick={() => setSelectedId(branch._id)}>View branch</button>{canManage && <><button className="button secondary" onClick={() => setDraft({ name: branch.name, code: branch.code || '', address: branch.address || '', phone: branch.phone || '', managerName: branch.managerName || '', status: branch.status, _id: branch._id })}>Edit</button><button className="button secondary" onClick={() => toggleStatus(branch)}>{branch.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</button><button className="row-action" aria-label="Delete branch" onClick={() => remove(branch)}><Trash2 size={15} /></button></>}</div></Card>)}</div>
+    {!branches.loading && !branches.error && !branches.data?.length && <Card className="recent">No branches found. Run the database migration to add the default branch, or add a branch.</Card>}
+    {selected && <Card className="recent branch-detail"><SectionTitle title={selected.branch.name} text={`${selected.products.length} products · ${selected.transactions.length} recent sales · ${selected.imports.length} recent imports`} /><h3>Products in this branch</h3><div className="table-wrap"><table><thead><tr><th>Product</th><th>SKU</th><th>Storage location</th><th>Quantity</th><th>Cost value</th><th>Status</th></tr></thead><tbody>{selected.products.map((product) => <tr key={product._id}><td>{product.name}</td><td>{product.sku || '—'}</td><td>{product.location}</td><td>{product.quantity} {product.unit}</td><td>{money(product.quantity * product.costPrice)} RWF</td><td>{product.quantity === 0 ? 'Out of stock' : product.quantity <= product.lowStockLevel ? 'Low stock' : product.status}</td></tr>)}{!selected.products.length && <tr><td colSpan="6">No products assigned to this branch.</td></tr>}</tbody></table></div><h3>Recent sales</h3><div className="table-wrap"><table><thead><tr><th>Date</th><th>Product</th><th>Quantity</th><th>Total</th><th>Staff</th></tr></thead><tbody>{selected.transactions.map((sale) => <tr key={sale._id}><td>{new Date(sale.transactionDate).toLocaleString()}</td><td>{sale.productId?.name || sale.serviceOrProduct}</td><td>{sale.quantity}</td><td>{money(sale.totalAmount)} RWF</td><td>{sale.staff?.fullName || sale.staff?.name || '—'}</td></tr>)}{!selected.transactions.length && <tr><td colSpan="5">No sales in this branch yet.</td></tr>}</tbody></table></div><h3>Recent imports</h3><div className="table-wrap"><table><thead><tr><th>Date</th><th>Product</th><th>Description</th><th>Quantity</th><th>Cost</th></tr></thead><tbody>{selected.imports.map((item) => <tr key={item._id}><td>{new Date(item.expenseDate || item.createdAt).toLocaleDateString()}</td><td>{item.productId?.name || 'Unlinked'}</td><td>{item.description}</td><td>{item.stockQuantity}</td><td>{money(item.amount)} RWF</td></tr>)}{!selected.imports.length && <tr><td colSpan="5">No imports in this branch yet.</td></tr>}</tbody></table></div></Card>}
+  </div></AppShell>
 }
 
 function RoleProtected({ auth, admin = false, business = false, children }) {
@@ -632,18 +1169,35 @@ function RoleProtected({ auth, admin = false, business = false, children }) {
 
 function AppRoutes() {
   const auth = useAuth()
+  const [preferences, setPreferences] = useState(() => {
+    try { const saved = JSON.parse(localStorage.getItem('shop_report_preferences') || '{}'); return { theme: ['light', 'dark'].includes(saved.theme) ? saved.theme : 'light', language: ['en', 'rw'].includes(saved.language) ? saved.language : 'en' } } catch { return { theme: 'light', language: 'en' } }
+  })
+  useEffect(() => {
+    document.documentElement.dataset.theme = preferences.theme
+    document.documentElement.lang = preferences.language
+    localStorage.setItem('shop_report_preferences', JSON.stringify(preferences))
+  }, [preferences])
+  const t = (text) => translations[preferences.language]?.[text] || text
+  const preferenceValue = { ...preferences, setTheme: (theme) => setPreferences((current) => ({ ...current, theme })), setLanguage: (language) => setPreferences((current) => ({ ...current, language })), t }
   const protect = (children) => <Protected auth={auth}>{children}</Protected>
-  return <Routes>
+  if (auth.lockedAccount && !auth.showOnlineLogin && !auth.user) return <PreferencesContext.Provider value={preferenceValue}><OfflineUnlock auth={auth} /></PreferencesContext.Provider>
+  return <OfflineSyncProvider user={auth.user} reauthenticate={auth.reauthenticate}><PreferencesContext.Provider value={preferenceValue}><Routes>
     <Route index element={<Navigate to="/dashboard" replace />} />
     <Route path="/login" element={<Login auth={auth} />} />
     <Route path="/dashboard" element={protect(<Dashboard auth={auth} />)} />
     <Route path="/transactions/new" element={protect(<NewTransaction auth={auth} />)} />
     <Route path="/transactions" element={protect(<TransactionsPage auth={auth} />)} />
+    <Route path="/sold-products" element={protect(<SoldProductsPage auth={auth} />)} />
+    <Route path="/products" element={protect(<ProductsPage auth={auth} />)} />
+    <Route path="/products/new" element={protect(<RoleProtected auth={auth} business><ProductsPage auth={auth} initialAdd /></RoleProtected>)} />
     <Route path="/reports" element={protect(<ReportsPage auth={auth} />)} />
     <Route path="/expenses" element={protect(<ResourcePage auth={auth} type="expenses" title="Imported stock" />)} />
+    <Route path="/account" element={protect(<WorkspaceInfoPage auth={auth} title="Account Information" description="Review your user account details." />)} />
+    <Route path="/branches" element={protect(<RoleProtected auth={auth} business><BranchesPage auth={auth} /></RoleProtected>)} />
+    <Route path="/settings" element={protect(<WorkspaceInfoPage auth={auth} title="Settings" description="Review workspace preferences." />)} />
     <Route path="/users" element={protect(<RoleProtected auth={auth} admin><ResourcePage auth={auth} type="users" title="Users management" /></RoleProtected>)} />
     <Route path="*" element={<Navigate to="/dashboard" replace />} />
-  </Routes>
+  </Routes></PreferencesContext.Provider></OfflineSyncProvider>
 }
 
 function App() {
@@ -651,3 +1205,11 @@ function App() {
 }
 
 export default App
+
+
+
+
+
+
+
+
