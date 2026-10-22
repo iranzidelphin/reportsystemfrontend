@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import api, { API_BASE_URL } from './services/api'
-import { clearPrivateData, getOfflineAccount, rememberOfflineAccount, verifyOfflinePin, offlineDb, cacheSalesHistory } from './offline/db'
+import { clearPrivateData, getOfflineAccount, rememberOfflineAccount, verifyOfflinePin, offlineDb, cacheSalesHistory, cacheApiData, getCachedApiData } from './offline/db'
 import { OfflineSyncProvider, OfflineSyncStatus } from './offline/OfflineSyncProvider'
 import { useOfflineSync } from './offline/OfflineSyncContext'
 import './App.css'
@@ -19,7 +19,16 @@ const cashInFor = (row) => Number(row?.cashIn ?? (Number(row?.paidAmount || 0) -
 const today = new Date().toISOString().slice(0, 10)
 const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
 const liveRefreshMs = 10 * 60 * 1000
-const PreferencesContext = createContext({ language: 'en', theme: 'light', setLanguage: () => {}, setTheme: () => {}, t: (text) => text })
+let deferredPwaInstallPrompt = null
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault()
+    deferredPwaInstallPrompt = event
+    window.dispatchEvent(new Event('manageyourstockinstallavailable'))
+  })
+  window.addEventListener('appinstalled', () => { deferredPwaInstallPrompt = null })
+}
+const PreferencesContext = createContext({ language: 'en', theme: 'light', mode: 'online', setLanguage: () => {}, setTheme: () => {}, setMode: () => {}, t: (text) => text })
 const translations = {
   rw: {
     Dashboard: 'Imbonerahamwe', STOCK: 'UBUBIKO', 'All Products': 'Ibicuruzwa byose', 'Sold Products': 'Ibicuruzwa byagurishijwe', Reports: 'Raporo', 'Record Sale': 'Andika igurisha', 'Add Product': 'Ongeramo igicuruzwa', ACCOUNT: 'KONTI', 'Account Information': 'Amakuru ya konti', 'Manage Branches': 'Genzura amashami', Users: 'Abakoresha', Settings: 'Igenamiterere', Logout: 'Sohoka', Overview: 'Incamake', Products: 'Ibicuruzwa', 'Add New Product': 'Ongeramo igicuruzwa gishya', Transactions: 'Ibikorwa', 'Record Product Sale': 'Andika igicuruzwa cyagurishijwe', 'Users management': 'Imicungire y’abakoresha', 'Review workspace preferences.': 'Reba igenamiterere ry’aho mukorera.', Currency: 'Ifaranga', Workspace: 'Ahakorerwa', 'Shop settings': 'Igenamiterere ry’iduka', Language: 'Ururimi', Appearance: 'Imigaragarire', Light: 'Umucyo', Dark: 'Umwijima', English: 'Icyongereza', Kinyarwanda: 'Ikinyarwanda',
@@ -36,6 +45,15 @@ const translations = {
 }
 
 Object.assign(translations.rw, {
+  'Operating mode': 'Uburyo sisitemu ikoramo', 'Online mode': 'Uburyo bwo kuri interineti', 'Offline mode': 'Uburyo bwo hanze ya interineti',
+  'Offline mode uses saved data. Sales and stock imports queue for sync; other records are view-only.': 'Uburyo bwo hanze ya interineti bukoresha amakuru yabitswe. Ibyagurishijwe n’ibyinjijwe mu bubiko bitegereza guhuza; andi makuru arebwa gusa.',
+  'Online mode uses live server data and synchronizes queued offline sales and imports.': 'Uburyo bwo kuri interineti bukoresha amakuru mashya ya seriveri kandi bugahuza ibyagurishijwe n’ibyinjijwe byari bitegereje.',
+  'Offline mode is read-only for this action. Sales and stock imports can still be queued.': 'Ubu buryo ntibwemerera guhindura aya makuru. Ibyagurishijwe n’ibyinjijwe mu bubiko biracyabikwa ngo bihuzwe.',
+  'Install app': 'Shyiramo porogaramu', 'Uninstall app': 'Kuramo porogaramu', 'Install manageyourstock on this device': 'Shyira manageyourstock kuri iki gikoresho', 'App installed': 'Porogaramu yashyizwemo',
+  'Use your browser’s install option to add the app to this device.': 'Koresha uburyo bwo gushyiramo porogaramu buri muri mucukumbuzi yawe.',
+  'Your device controls app removal. On Windows, open Start, find manageyourstock, right-click it, and choose Uninstall. On Android, long-press its icon and choose App info, then Uninstall. On iPhone or iPad, touch and hold its icon, then choose Remove App.': 'Igikoresho cyawe ni cyo kiyobora ikurwaho rya porogaramu. Kuri Windows, fungura Start, ushake manageyourstock, ukandeho iburyo uhitemo Uninstall. Kuri Android, kanda igihe kirekire ku kimenyetso cyayo, uhitemo App info hanyuma Uninstall. Kuri iPhone cyangwa iPad, kanda igihe kirekire ku kimenyetso cyayo uhitemo Remove App.',
+  'On iPhone or iPad, open the browser Share menu and choose Add to Home Screen. On other devices, use the browser menu and choose Install app or Add to Home Screen.': 'Kuri iPhone cyangwa iPad, fungura Share muri mucukumbuzi uhitemo Add to Home Screen. Ku bindi bikoresho, koresha menu ya mucukumbuzi uhitemo Install app cyangwa Add to Home Screen.',
+  Close: 'Funga', 'App installation status': 'Imiterere yo gushyiramo porogaramu',
   Online: 'Ifite interineti', Offline: 'Nta interineti', 'Last sync': 'Igihe iheruka guhuza', 'Not synced yet': 'Ntiyigeze ihuzwa', pending: 'bitegereje', conflicts: 'ibibazo',
   'Saved on this device for 90 days.': 'Bibikwa kuri iki gikoresho mu gihe cy’iminsi 90.',
   'The browser may clear locally stored records': 'Mucukumbuzi ishobora gusiba amakuru yabitswe kuri iki gikoresho', 'Local storage not persistent': 'Amakuru yo kuri iki gikoresho ashobora gusibangana',
@@ -237,6 +255,9 @@ function useApi(path, options = {}) {
   const initial = options.initial ?? null
   const enabled = options.enabled ?? true
   const refreshMs = options.refreshMs || 0
+  const { mode } = useContext(PreferencesContext)
+  const sync = useOfflineSync()
+  const userId = sync?.userId
   const initialRef = useRef(initial)
   const [state, setState] = useState({ data: initial, loading: enabled, error: '' })
   const [poll, setPoll] = useState(0)
@@ -250,11 +271,25 @@ function useApi(path, options = {}) {
     let alive = true
     const requestParams = key ? JSON.parse(key) : undefined
     setState((current) => ({ ...current, loading: true, error: '' }))
-    api.get(path, { params: requestParams })
-      .then(({ data }) => alive && setState({ data: data.data, meta: data.meta, loading: false, error: '' }))
-      .catch((error) => alive && setState({ data: initialRef.current, loading: false, error: apiMessage(error) }))
+    const readCache = async (message) => {
+      const cached = await getCachedApiData(userId, path, requestParams).catch(() => null)
+      if (!alive) return
+      if (cached) setState({ data: cached.data, meta: cached.meta, loading: false, error: '' })
+      else setState({ data: initialRef.current, loading: false, error: message || 'No saved copy is available on this device.' })
+    }
+    if (mode === 'offline' || !navigator.onLine) {
+      readCache('No saved copy is available on this device. Connect to the internet to load this page.').catch(() => {})
+    } else {
+      api.get(path, { params: requestParams })
+        .then(({ data }) => {
+          if (!alive) return
+          setState({ data: data.data, meta: data.meta, loading: false, error: '' })
+          cacheApiData(userId, path, requestParams, data.data, data.meta).catch(() => {})
+        })
+        .catch((error) => readCache(apiMessage(error)).catch(() => alive && setState({ data: initialRef.current, loading: false, error: apiMessage(error) })))
+    }
     return () => { alive = false }
-  }, [path, key, enabled, poll])
+  }, [path, key, enabled, poll, userId, mode])
 
   useEffect(() => {
     if (!enabled || !refreshMs) return undefined
@@ -277,7 +312,7 @@ function Card({ children, className = '' }) {
 }
 
 function AppShell({ children, title, auth, productHeader = false, saleHeader = false }) {
-  const { t } = useContext(PreferencesContext)
+  const { t, mode } = useContext(PreferencesContext)
   const [open, setOpen] = useState(false)
   const [stockOpen, setStockOpen] = useState(true)
   const [accountOpen, setAccountOpen] = useState(true)
@@ -334,7 +369,7 @@ function AppShell({ children, title, auth, productHeader = false, saleHeader = f
           <ChevronDown size={16} />
         </div></>}
       </header>
-      <OfflineSyncStatus t={t} />
+      <OfflineSyncStatus t={t} mode={mode} />
       {localizeNode(children, t)}
     </main>
   </div>
@@ -654,7 +689,8 @@ function LowStockList({ items = [] }) {
 }
 
 function ProductsPage({ auth, initialAdd = false }) {
-  const { t } = useContext(PreferencesContext)
+  const { t, mode } = useContext(PreferencesContext)
+  const offlineSync = useOfflineSync()
   const navigate = useNavigate()
   const location = useLocation()
   const [filters, setFilters] = useState({ search: location.state?.search || '', category: '', brand: '', branchId: '', status: '', lowStock: '' })
@@ -677,7 +713,9 @@ function ProductsPage({ auth, initialAdd = false }) {
   const params = Object.fromEntries(Object.entries({ ...filters, refresh }).filter(([key, value]) => key !== 'brand' && key !== 'sort' && value !== ''))
   const list = useApi('/products', { params, initial: [], refreshMs: liveRefreshMs })
   const branchList = useApi('/branches', { params: { refresh }, initial: [] })
-  const rows = list.data || []
+  const rows = mode === 'offline'
+    ? offlineSync.products
+    : (list.data?.length ? list.data : offlineSync.products)
   const categories = [...new Set([...rows.map((row) => row.category).filter(Boolean), 'Electronics', 'Accessories', ...customOptions.category])]
   const brands = [...new Set([...rows.map((row) => row.brand).filter(Boolean), 'Apple', 'Samsung', ...customOptions.brand])]
   const models = [...new Set([...rows.map((row) => row.description).filter(Boolean), ...customOptions.model])]
@@ -707,7 +745,12 @@ function ProductsPage({ auth, initialAdd = false }) {
     setCustomOptions((current) => ({ ...current, [key]: [...new Set([...current[key], value])] }))
     set(key === 'model' ? 'description' : key, value)
   }
-  const visibleRows = rows.filter((row) => !filters.brand || row.brand === filters.brand).sort((a, b) => filters.sort === 'name' ? a.name.localeCompare(b.name) : filters.sort === 'oldest' ? new Date(a.createdAt) - new Date(b.createdAt) : new Date(b.createdAt) - new Date(a.createdAt))
+  const visibleRows = rows.filter((row) => (!filters.brand || row.brand === filters.brand)
+    && (!filters.category || row.category === filters.category)
+    && (!filters.status || row.status === filters.status)
+    && (!filters.branchId || String(row.branchId?._id || row.branchId || '') === filters.branchId)
+    && (!filters.search || `${row.name} ${row.sku || ''} ${row.category || ''} ${row.brand || ''} ${row.description || ''}`.toLowerCase().includes(filters.search.toLowerCase())))
+    .sort((a, b) => filters.sort === 'name' ? a.name.localeCompare(b.name) : filters.sort === 'oldest' ? new Date(a.createdAt) - new Date(b.createdAt) : new Date(b.createdAt) - new Date(a.createdAt))
   const pageCount = Math.max(1, Math.ceil(visibleRows.length / pageSize))
   const pageRows = visibleRows.slice((page - 1) * pageSize, page * pageSize)
   const totalQuantity = rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
@@ -743,7 +786,7 @@ function ProductsPage({ auth, initialAdd = false }) {
       {editingId && <div className="product-meta">Added {form.createdAt ? new Date(form.createdAt).toLocaleDateString() : 'â€”'} Â· {form.addedBy?.name || form.addedBy?.fullName || auth.user?.name || 'â€”'} Â· Updated {form.updatedAt ? new Date(form.updatedAt).toLocaleString() : 'â€”'}</div>}
       <div className="form-actions"><button type="button" className="button secondary" onClick={() => { setFormOpen(false); navigate('/products') }}>Cancel / Back</button><button className="button" disabled={saving}>{saving ? 'Saving...' : 'Record New Product'}</button></div></form></Card></>}
     {!formOpen && <><div className="product-catalog-filters"><label className="catalog-search"><Search size={14} /><input placeholder="Search products..." value={filters.search} onChange={(e) => { setFilters({ ...filters, search: e.target.value }); setPage(1) }} /></label><select value={filters.brand} onChange={(e) => { setFilters({ ...filters, brand: e.target.value }); setPage(1) }}><option value="">All Brands</option>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select><select value={filters.category} onChange={(e) => { setFilters({ ...filters, category: e.target.value }); setPage(1) }}><option value="">All Categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><select value={filters.status} onChange={(e) => { setFilters({ ...filters, status: e.target.value }); setPage(1) }}><option value="">All Statuses</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select><select value={filters.branchId} onChange={(e) => { setFilters({ ...filters, branchId: e.target.value }); setPage(1) }}><option value="">All Branches</option>{branches.map((branch) => <option key={branch._id} value={branch._id}>{branch.name}</option>)}</select><select value={filters.sort || 'latest'} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}><option value="latest">Sort: Latest Added</option><option value="oldest">Sort: Oldest Added</option><option value="name">Sort: Product Name</option></select></div>
-    {cardView ? <div className="product-card-grid">{list.loading && <Card className="catalog-state">Loading products...</Card>}{list.error && <Notice tone="error">{list.error}</Notice>}{!list.loading && !list.error && pageRows.map((product) => { const low = Number(product.quantity) > 0 && Number(product.quantity) <= Number(product.lowStockLevel); return <article className="catalog-product-card" key={product._id}><div className="catalog-image"><div className="catalog-image-placeholder"><Package size={38} /><span>{product.category || 'PRODUCT'}</span></div><input type="checkbox" checked={selectedRows.includes(product._id)} onChange={() => toggleRow(product._id)} aria-label={`Select ${product.name}`} /><span className="catalog-category">{product.category || 'PRODUCT'}</span></div><div className="catalog-product-body"><div className="catalog-product-title"><strong>{product.brand || 'Product'}</strong><span>{product.location || 'â€”'}</span></div><p className="catalog-model">{product.name}{product.description ? ` Â· Model: ${product.description}` : ''}</p><div className="catalog-stock-row"><span>Quantity<br /><b>{product.quantity} {product.unit || 'pcs'}</b></span><span>Status<br /><b className={product.status === 'ACTIVE' ? (low ? 'text-low' : 'text-in-stock') : 'text-inactive'}>{product.status === 'ACTIVE' ? (Number(product.quantity) === 0 ? 'Out of Stock' : low ? 'Low Stock' : 'In Stock') : 'Inactive'}</b></span></div><div className="catalog-price-row"><span>Price on Sale<br /><b>{money(product.sellingPrice)} RWF</b></span><span>Confirmed<br /><b className="text-confirmed">Yes</b></span></div><div className="catalog-cost-row"><span>Cost Price<br /><b>{money(product.costPrice)} RWF</b></span><span>Total Value<br /><b>{money(Number(product.costPrice || 0) * Number(product.quantity || 0))} RWF</b></span></div></div><div className="catalog-product-actions">{canManageBusiness(auth.user) && <><button type="button" className="catalog-status-button" onClick={() => setStatus(product)}><span>â–³</span> {product.status === 'ACTIVE' ? 'Unconfirm' : 'Confirm'}</button><button title="Edit product" onClick={() => startEdit(product)}><Edit2 size={13} /></button><button title="Duplicate product" onClick={() => duplicate(product)}><Copy size={13} /></button><button title="View product" onClick={() => startEdit(product)}><Eye size={13} /></button></>}<NavLink title="Record sale" to="/transactions/new"><ShoppingCart size={13} /></NavLink>{canManageBusiness(auth.user) && <button title="Delete product" className="delete-action" onClick={() => remove(product)}><Trash2 size={13} /></button>}</div></article> })}{!list.loading && !list.error && !pageRows.length && <Card className="catalog-state">No products found.</Card>}</div> : <Card className="recent"><div className="table-wrap"><table className="product-table"><thead><tr>{['Product name','SKU','Category','Brand','Selling price','Cost price','Quantity in stock','Storage location','Status','Actions'].map((col) => <th key={col}>{col}</th>)}</tr></thead><tbody><TableState loading={list.loading} error={list.error} empty={!pageRows.length} colSpan={10} />{pageRows.map((product) => <tr key={product._id}><td><strong>{product.name}</strong></td><td>{product.sku || 'â€”'}</td><td>{product.category || 'â€”'}</td><td>{product.brand || 'â€”'}</td><td>{money(product.sellingPrice)} RWF</td><td>{money(product.costPrice)} RWF</td><td>{product.quantity} {product.unit}</td><td>{product.location}</td><td><span className={product.status === 'ACTIVE' ? 'stock-badge active' : 'stock-badge inactive'}>{product.status === 'ACTIVE' ? 'Active' : 'Inactive'}</span>{Number(product.quantity) === 0 ? <span className="stock-badge out">Out of Stock</span> : Number(product.quantity) <= Number(product.lowStockLevel) && <span className="stock-badge low">Low Stock</span>}</td><td>{canManageBusiness(auth.user) && <><button className="row-action" aria-label="Edit product" onClick={() => startEdit(product)}><Edit2 size={16} /></button><button className="row-action" aria-label="Delete product" onClick={() => remove(product)}><Trash2 size={16} /></button></>}</td></tr>)}</tbody></table></div></Card>}
+    {cardView ? <div className="product-card-grid">{mode !== 'offline' && list.loading && <Card className="catalog-state">Loading products...</Card>}{mode !== 'offline' && list.error && !rows.length && <Notice tone="error">{list.error}</Notice>}{(mode === 'offline' || (!list.loading && !list.error)) && pageRows.map((product) => { const low = Number(product.quantity) > 0 && Number(product.quantity) <= Number(product.lowStockLevel); return <article className="catalog-product-card" key={product._id}><div className="catalog-image"><div className="catalog-image-placeholder"><Package size={38} /><span>{product.category || 'PRODUCT'}</span></div><input type="checkbox" checked={selectedRows.includes(product._id)} onChange={() => toggleRow(product._id)} aria-label={`Select ${product.name}`} /><span className="catalog-category">{product.category || 'PRODUCT'}</span></div><div className="catalog-product-body"><div className="catalog-product-title"><strong>{product.brand || 'Product'}</strong><span>{product.location || 'â€”'}</span></div><p className="catalog-model">{product.name}{product.description ? ` Â· Model: ${product.description}` : ''}</p><div className="catalog-stock-row"><span>Quantity<br /><b>{product.quantity} {product.unit || 'pcs'}</b></span><span>Status<br /><b className={product.status === 'ACTIVE' ? (low ? 'text-low' : 'text-in-stock') : 'text-inactive'}>{product.status === 'ACTIVE' ? (Number(product.quantity) === 0 ? 'Out of Stock' : low ? 'Low Stock' : 'In Stock') : 'Inactive'}</b></span></div><div className="catalog-price-row"><span>Price on Sale<br /><b>{money(product.sellingPrice)} RWF</b></span><span>Confirmed<br /><b className="text-confirmed">Yes</b></span></div><div className="catalog-cost-row"><span>Cost Price<br /><b>{money(product.costPrice)} RWF</b></span><span>Total Value<br /><b>{money(Number(product.costPrice || 0) * Number(product.quantity || 0))} RWF</b></span></div></div><div className="catalog-product-actions">{canManageBusiness(auth.user) && <><button type="button" className="catalog-status-button" onClick={() => setStatus(product)}><span>â–³</span> {product.status === 'ACTIVE' ? 'Unconfirm' : 'Confirm'}</button><button title="Edit product" onClick={() => startEdit(product)}><Edit2 size={13} /></button><button title="Duplicate product" onClick={() => duplicate(product)}><Copy size={13} /></button><button title="View product" onClick={() => startEdit(product)}><Eye size={13} /></button></>}<NavLink title="Record sale" to="/transactions/new"><ShoppingCart size={13} /></NavLink>{canManageBusiness(auth.user) && <button title="Delete product" className="delete-action" onClick={() => remove(product)}><Trash2 size={13} /></button>}</div></article> })}{mode === 'offline' && !pageRows.length && <Card className="catalog-state">No saved products found on this device.</Card>}{mode !== 'offline' && !list.loading && !list.error && !pageRows.length && <Card className="catalog-state">No products found.</Card>}</div> : <Card className="recent"><div className="table-wrap"><table className="product-table"><thead><tr>{['Product name','SKU','Category','Brand','Selling price','Cost price','Quantity in stock','Storage location','Status','Actions'].map((col) => <th key={col}>{col}</th>)}</tr></thead><tbody><TableState loading={mode !== 'offline' && list.loading} error={mode === 'offline' ? '' : list.error} empty={!pageRows.length} colSpan={10} />{pageRows.map((product) => <tr key={product._id}><td><strong>{product.name}</strong></td><td>{product.sku || 'â€”'}</td><td>{product.category || 'â€”'}</td><td>{product.brand || 'â€”'}</td><td>{money(product.sellingPrice)} RWF</td><td>{money(product.costPrice)} RWF</td><td>{product.quantity} {product.unit}</td><td>{product.location}</td><td><span className={product.status === 'ACTIVE' ? 'stock-badge active' : 'stock-badge inactive'}>{product.status === 'ACTIVE' ? 'Active' : 'Inactive'}</span>{Number(product.quantity) === 0 ? <span className="stock-badge out">Out of Stock</span> : Number(product.quantity) <= Number(product.lowStockLevel) && <span className="stock-badge low">Low Stock</span>}</td><td>{canManageBusiness(auth.user) && <><button className="row-action" aria-label="Edit product" onClick={() => startEdit(product)}><Edit2 size={16} /></button><button className="row-action" aria-label="Delete product" onClick={() => remove(product)}><Trash2 size={16} /></button></>}</td></tr>)}</tbody></table></div></Card>}
     <div className="catalog-pagination"><span>Showing {visibleRows.length ? (page - 1) * pageSize + 1 : 0} to {Math.min(page * pageSize, visibleRows.length)} of {visibleRows.length} products</span><select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}><option value="10">10 per page</option><option value="25">25 per page</option><option value="50">50 per page</option></select><div><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>â€¹ Previous</button><b>{page}</b><button disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)}>Next â€º</button></div></div></>}
   </div></AppShell>
 }
@@ -1092,15 +1135,12 @@ function resourceCells(type, row, t) {
 }
 
 function Protected({ auth, children }) {
-  const location = useLocation()
-  const offlineAllowed = ['/transactions/new', '/expenses'].includes(location.pathname)
-  if (auth.offline && !navigator.onLine && !offlineAllowed) return <Navigate to="/transactions/new" replace />
   const onlineSession = Boolean(sessionStorage.getItem('shop_report_token'))
-  return auth.user && (onlineSession || (auth.offline && offlineAllowed)) ? children : <Navigate to="/login" replace />
+  return auth.user && (onlineSession || auth.offline) ? children : <Navigate to="/login" replace />
 }
 
 function WorkspaceInfoPage({ auth, title, description }) {
-  const { language, theme, setLanguage, setTheme, t } = useContext(PreferencesContext)
+  const { language, theme, mode, setLanguage, setTheme, setMode, t } = useContext(PreferencesContext)
   const isAccount = title === 'Account Information'
   const isSettings = title === 'Settings'
   const fullName = auth.user?.fullName || auth.user?.name || ''
@@ -1111,9 +1151,67 @@ function WorkspaceInfoPage({ auth, title, description }) {
     <Card className="account-panel"><div className="account-profile"><div className="account-avatar-wrap"><div className="account-avatar"><CircleUserRound size={43} /></div><span>AVATAR</span></div><div className="account-details"><div><small>FIRST NAME</small><span>{firstName || 'â€”'}</span><small>GENDER</small><span>{auth.user?.gender || 'â€”'}</span><small>PHONE</small><span>{auth.user?.phoneNumber ? `+250${auth.user.phoneNumber.replace(/^0/, '')}` : 'â€”'}</span></div><div><small>LAST NAME</small><span>{lastName || 'â€”'}</span><small>EMAIL</small><span>{auth.user?.email || 'â€”'}</span><small>ROLE</small><span>{auth.user?.role || 'â€”'}</span></div></div></div>
       <section className="account-password"><h3><LockKeyhole size={15} /> Change Password</h3><form onSubmit={(event) => event.preventDefault()}><label>CURRENT PASSWORD<input type="password" placeholder="Enter current password" autoComplete="current-password" /></label><label>NEW PASSWORD<input type="password" placeholder="Enter new password" autoComplete="new-password" /></label><label>CONFIRM NEW PASSWORD<input type="password" placeholder="Confirm new password" autoComplete="new-password" /></label><button type="submit" className="button">Update password</button></form></section>
     </Card></> : <><Card className="page-hero"><div><p className="eyebrow">WORKSPACE</p><h2>{t(title)}</h2><p>{description}</p></div></Card>
-    {<Card className="form-card workspace-info">{isSettings ? <><SectionTitle title={t("Shop settings")} text={t("Review workspace preferences.")} /><div className="settings-preferences"><label>{t("Language")}<select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="en">{t("English")}</option><option value="rw">{t("Kinyarwanda")}</option></select></label><label>{t("Appearance")}<select value={theme} onChange={(event) => setTheme(event.target.value)}><option value="light">{t("Light")}</option><option value="dark">{t("Dark")}</option></select></label></div><dl><dt>{t("Currency")}</dt><dd>RWF</dd><dt>{t("Workspace")}</dt><dd>manageyourstock</dd></dl></> : <><SectionTitle title="Branches" text="Branch management" /><Notice>Branch management is not configured for this workspace yet.</Notice></>}</Card>}
+    {<Card className="form-card workspace-info">{isSettings ? <><SectionTitle title={t("Shop settings")} text={t("Review workspace preferences.")} /><div className="settings-preferences"><label>{t("Language")}<select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="en">{t("English")}</option><option value="rw">{t("Kinyarwanda")}</option></select></label><label>{t("Appearance")}<select value={theme} onChange={(event) => setTheme(event.target.value)}><option value="light">{t("Light")}</option><option value="dark">{t("Dark")}</option></select></label><label>{t("Operating mode")}<select value={mode} onChange={(event) => setMode(event.target.value)}><option value="online">{t("Online mode")}</option><option value="offline">{t("Offline mode")}</option></select><small>{t(mode === 'offline' ? 'Offline mode uses saved data. Sales and stock imports queue for sync; other records are view-only.' : 'Online mode uses live server data and synchronizes queued offline sales and imports.')}</small></label></div><PwaInstallSetting t={t} /><dl><dt>{t("Currency")}</dt><dd>RWF</dd><dt>{t("Workspace")}</dt><dd>manageyourstock</dd></dl></> : <><SectionTitle title="Branches" text="Branch management" /><Notice>Branch management is not configured for this workspace yet.</Notice></>}</Card>}
     </>}
   </div></AppShell>
+}
+
+function PwaInstallSetting({ t }) {
+  const [installPrompt, setInstallPrompt] = useState(null)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [isInstalled, setIsInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true)
+
+  useEffect(() => {
+    const displayMode = window.matchMedia('(display-mode: standalone)')
+    const updateInstalledState = () => setIsInstalled(displayMode.matches || navigator.standalone === true)
+    const handleInstallAvailable = () => setInstallPrompt(deferredPwaInstallPrompt)
+    const handleInstalled = () => {
+      setIsInstalled(true)
+      setInstallPrompt(null)
+    }
+    setInstallPrompt(deferredPwaInstallPrompt)
+    displayMode.addEventListener?.('change', updateInstalledState)
+    displayMode.addListener?.(updateInstalledState)
+    window.addEventListener('manageyourstockinstallavailable', handleInstallAvailable)
+    window.addEventListener('appinstalled', handleInstalled)
+    return () => {
+      displayMode.removeEventListener?.('change', updateInstalledState)
+      displayMode.removeListener?.(updateInstalledState)
+      window.removeEventListener('manageyourstockinstallavailable', handleInstallAvailable)
+      window.removeEventListener('appinstalled', handleInstalled)
+    }
+  }, [])
+
+  const handleClick = async () => {
+    if (isInstalled) {
+      setHelpOpen((open) => !open)
+      return
+    }
+    if (!installPrompt) {
+      setHelpOpen(true)
+      return
+    }
+    try {
+      await installPrompt.prompt()
+      const choice = await installPrompt.userChoice
+      if (choice?.outcome === 'accepted') setIsInstalled(true)
+      deferredPwaInstallPrompt = null
+      setInstallPrompt(null)
+    } catch {
+      setHelpOpen(true)
+    }
+  }
+
+  const installedInstructions = 'Your device controls app removal. On Windows, open Start, find manageyourstock, right-click it, and choose Uninstall. On Android, long-press its icon and choose App info, then Uninstall. On iPhone or iPad, touch and hold its icon, then choose Remove App.'
+  const installInstructions = installPrompt
+    ? 'Use your browser’s install option to add the app to this device.'
+    : 'On iPhone or iPad, open the browser Share menu and choose Add to Home Screen. On other devices, use the browser menu and choose Install app or Add to Home Screen.'
+
+  return <section className="pwa-install-setting" aria-label={t('App installation status')}>
+    <div className="pwa-install-copy"><strong>{t('Install manageyourstock on this device')}</strong><span>{isInstalled ? t('App installed') : t('Use your browser’s install option to add the app to this device.')}</span></div>
+    <button type="button" className={isInstalled ? 'button secondary' : 'button'} onClick={handleClick}>{t(isInstalled ? 'Uninstall app' : 'Install app')}</button>
+    {helpOpen && <div className="pwa-install-help" role="status"><p>{t(isInstalled ? installedInstructions : installInstructions)}</p><button type="button" className="button secondary" onClick={() => setHelpOpen(false)}>{t('Close')}</button></div>}
+  </section>
 }
 
 function BranchesPage({ auth }) {
@@ -1170,7 +1268,7 @@ function RoleProtected({ auth, admin = false, business = false, children }) {
 function AppRoutes() {
   const auth = useAuth()
   const [preferences, setPreferences] = useState(() => {
-    try { const saved = JSON.parse(localStorage.getItem('shop_report_preferences') || '{}'); return { theme: ['light', 'dark'].includes(saved.theme) ? saved.theme : 'light', language: ['en', 'rw'].includes(saved.language) ? saved.language : 'en' } } catch { return { theme: 'light', language: 'en' } }
+    try { const saved = JSON.parse(localStorage.getItem('shop_report_preferences') || '{}'); return { theme: ['light', 'dark'].includes(saved.theme) ? saved.theme : 'light', language: ['en', 'rw'].includes(saved.language) ? saved.language : 'en', mode: ['online', 'offline'].includes(saved.mode) ? saved.mode : 'online' } } catch { return { theme: 'light', language: 'en', mode: 'online' } }
   })
   useEffect(() => {
     document.documentElement.dataset.theme = preferences.theme
@@ -1178,7 +1276,7 @@ function AppRoutes() {
     localStorage.setItem('shop_report_preferences', JSON.stringify(preferences))
   }, [preferences])
   const t = (text) => translations[preferences.language]?.[text] || text
-  const preferenceValue = { ...preferences, setTheme: (theme) => setPreferences((current) => ({ ...current, theme })), setLanguage: (language) => setPreferences((current) => ({ ...current, language })), t }
+  const preferenceValue = { ...preferences, setTheme: (theme) => setPreferences((current) => ({ ...current, theme })), setLanguage: (language) => setPreferences((current) => ({ ...current, language })), setMode: (mode) => setPreferences((current) => ({ ...current, mode })), t }
   const protect = (children) => <Protected auth={auth}>{children}</Protected>
   if (auth.lockedAccount && !auth.showOnlineLogin && !auth.user) return <PreferencesContext.Provider value={preferenceValue}><OfflineUnlock auth={auth} /></PreferencesContext.Provider>
   return <OfflineSyncProvider user={auth.user} reauthenticate={auth.reauthenticate}><PreferencesContext.Provider value={preferenceValue}><Routes>

@@ -15,6 +15,19 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
+  const method = String(config.method || 'get').toLowerCase()
+  const isSyncRequest = String(config.url || '').startsWith('/sync/batch')
+  const isLoginRequest = String(config.url || '').startsWith('/auth/login')
+  if (method !== 'get' && localStorage.getItem('shop_report_preferences')) {
+    try {
+      const { mode } = JSON.parse(localStorage.getItem('shop_report_preferences'))
+      if (mode === 'offline' && !isSyncRequest && !isLoginRequest) {
+        return Promise.reject(Object.assign(new Error('Offline mode is read-only for this action. Sales and stock imports can still be queued.'), { code: 'OFFLINE_READ_ONLY' }))
+      }
+    } catch (error) {
+      if (error?.code === 'OFFLINE_READ_ONLY') throw error
+    }
+  }
   const token = sessionStorage.getItem('shop_report_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config

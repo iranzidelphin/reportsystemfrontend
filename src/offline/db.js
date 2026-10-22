@@ -10,6 +10,13 @@ offlineDb.version(1).stores({
   salesHistory: '&id, userId, operationId, date, status, branchId',
   meta: '&key',
 })
+offlineDb.version(2).stores({
+  products: '&[userId+id], userId, branchId, name, sku',
+  operations: '&operationId, userId, status, createdAt, [userId+status+createdAt]',
+  salesHistory: '&id, userId, operationId, date, status, branchId',
+  meta: '&key',
+  apiCache: '&cacheKey, userId, path, cachedAt',
+})
 
 const bytesToBase64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)))
 const base64ToBytes = (value) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
@@ -243,11 +250,23 @@ export async function pruneSalesHistory(userId) {
 
 export async function clearPrivateData() {
   const [device, lock] = await Promise.all([offlineDb.meta.get('deviceId'), offlineDb.meta.get('syncLock')])
-  await offlineDb.transaction('rw', offlineDb.products, offlineDb.operations, offlineDb.salesHistory, offlineDb.meta, async () => {
-    await Promise.all([offlineDb.products.clear(), offlineDb.operations.clear(), offlineDb.salesHistory.clear(), offlineDb.meta.clear()])
+  await offlineDb.transaction('rw', offlineDb.products, offlineDb.operations, offlineDb.salesHistory, offlineDb.meta, offlineDb.apiCache, async () => {
+    await Promise.all([offlineDb.products.clear(), offlineDb.operations.clear(), offlineDb.salesHistory.clear(), offlineDb.meta.clear(), offlineDb.apiCache.clear()])
     if (device) await offlineDb.meta.put(device)
     if (lock?.expiresAt > Date.now()) await offlineDb.meta.put(lock)
   })
+}
+
+export async function cacheApiData(userId, path, params, data, meta) {
+  if (!userId || data === undefined) return
+  const cacheKey = `${String(userId)}:${path}:${JSON.stringify(params || {})}`
+  await offlineDb.apiCache.put({ cacheKey, userId: String(userId), path, params: params || {}, data, meta, cachedAt: Date.now() })
+}
+
+export async function getCachedApiData(userId, path, params) {
+  if (!userId) return null
+  const cacheKey = `${String(userId)}:${path}:${JSON.stringify(params || {})}`
+  return offlineDb.apiCache.get(cacheKey)
 }
 
 export async function localSyncSnapshot(userId) {

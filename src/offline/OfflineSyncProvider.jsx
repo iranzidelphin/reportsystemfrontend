@@ -153,7 +153,7 @@ export function OfflineSyncProvider({ user, reauthenticate, children }) {
   return <OfflineSyncContext.Provider value={value}>{children}</OfflineSyncContext.Provider>
 }
 
-export function OfflineSyncStatus({ t = (value) => value }) {
+export function OfflineSyncStatus({ t = (value) => value, mode = 'online' }) {
   const sync = useOfflineSync()
   const [expanded, setExpanded] = useState(false)
   const [pin, setPin] = useState('')
@@ -164,7 +164,7 @@ export function OfflineSyncStatus({ t = (value) => value }) {
 
   return <section className="offline-sync-status" aria-live="polite">
     <div className="offline-sync-summary">
-      <span className={sync.online ? 'sync-connection online' : 'sync-connection offline'}>{sync.online ? t('Online') : t('Offline')}</span>
+      <span className={mode === 'offline' ? 'sync-connection offline' : sync.online ? 'sync-connection online' : 'sync-connection offline'}>{mode === 'offline' ? t('Offline') : sync.online ? t('Online') : t('Offline')}</span>
       <span>{t('Last sync')}: {timestamp}</span>
       <span>{sync.snapshot.pending} {t('pending')}</span>
       <span className={sync.snapshot.conflicts ? 'sync-conflicts' : ''}>{sync.snapshot.conflicts} {t('conflicts')}</span>
