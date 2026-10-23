@@ -17,6 +17,13 @@ offlineDb.version(2).stores({
   meta: '&key',
   apiCache: '&cacheKey, userId, path, cachedAt',
 })
+offlineDb.version(3).stores({
+  products: '&[userId+id], userId, name, sku',
+  operations: '&operationId, userId, status, createdAt, [userId+status+createdAt]',
+  salesHistory: '&id, userId, operationId, date, status',
+  meta: '&key',
+  apiCache: '&cacheKey, userId, path, cachedAt',
+})
 
 const bytesToBase64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)))
 const base64ToBytes = (value) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
@@ -66,7 +73,6 @@ export async function rememberProducts(userId, products) {
     ...product,
     id: String(product._id || product.id),
     userId: String(userId),
-    branchId: String(product.branchId?._id || product.branchId || ''),
     cachedAt: Date.now(),
   }))
   await offlineDb.transaction('rw', offlineDb.products, async () => {

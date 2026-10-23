@@ -1,11 +1,11 @@
 ﻿import { cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { HashRouter, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart3, Bell, CalendarDays, ChevronDown, CircleDollarSign, ClipboardList,
+  BarChart3, CalendarDays, ChevronDown, CircleDollarSign, ClipboardList,
   Edit2, LogOut, Menu, Package, Plus, ReceiptText, Search,
   Trash2, Users, Wallet, X, Boxes, LayoutGrid, ShoppingCart, RotateCcw,
   RefreshCw, Grid2X2, List, Eye, Copy,
-  FileText, UserRound, CircleUserRound, Building2, Settings, LockKeyhole, Pencil,
+  FileText, UserRound, CircleUserRound, Building2, Settings, LockKeyhole, Pencil, Sun, Moon,
 } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import api, { API_BASE_URL } from './services/api'
@@ -45,6 +45,7 @@ const translations = {
 }
 
 Object.assign(translations.rw, {
+  'Head office · branch overview': 'Incamake y’ibiro bikuru n’amashami', 'Monitor users, inventory, and sales across your branches.': 'Kurikirana abakoresha, ububiko n’igurisha mu mashami yawe.', 'Total branches': 'Amashami yose', 'Active users': 'Abakoresha bakora', 'Active today': 'Abakoresheje uyu munsi', 'Active branches': 'Amashami akora', 'Low stock alerts': 'Imiburo y’ububiko buke', 'Branch Manager': 'Umuyobozi w’ishami', 'Full name': 'Amazina yuzuye', 'Initial PIN': 'PIN yo gutangira', 'Reset PIN (optional)': 'Hindura PIN (si ngombwa)', 'Account status': 'Imiterere ya konti', 'Select branch': 'Hitamo ishami', 'Unassigned': 'Nta shami yashyizweho',
   'Operating mode': 'Uburyo sisitemu ikoramo', 'Online mode': 'Uburyo bwo kuri interineti', 'Offline mode': 'Uburyo bwo hanze ya interineti',
   'Offline mode uses saved data. Sales and stock imports queue for sync; other records are view-only.': 'Uburyo bwo hanze ya interineti bukoresha amakuru yabitswe. Ibyagurishijwe n’ibyinjijwe mu bubiko bitegereza guhuza; andi makuru arebwa gusa.',
   'Online mode uses live server data and synchronizes queued offline sales and imports.': 'Uburyo bwo kuri interineti bukoresha amakuru mashya ya seriveri kandi bugahuza ibyagurishijwe n’ibyinjijwe byari bitegereje.',
@@ -312,7 +313,7 @@ function Card({ children, className = '' }) {
 }
 
 function AppShell({ children, title, auth, productHeader = false, saleHeader = false }) {
-  const { t, mode } = useContext(PreferencesContext)
+  const { t, mode, theme, setTheme } = useContext(PreferencesContext)
   const [open, setOpen] = useState(false)
   const [stockOpen, setStockOpen] = useState(true)
   const [accountOpen, setAccountOpen] = useState(true)
@@ -345,14 +346,13 @@ function AppShell({ children, title, auth, productHeader = false, saleHeader = f
 
           <NavLink to="/reports" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><FileText size={16} /><span>{t('Reports')}</span></NavLink>
           <NavLink to="/transactions/new" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><ShoppingCart size={16} /><span>{t('Record Sale')}</span></NavLink>
-          {canManageBusiness(auth.user) && <NavLink to="/products/new" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active add-product-link' : 'add-product-link'}><Plus size={16} /><span>{t('Add Product')}</span></NavLink>}
+          {canManageAdmin(auth.user) && <NavLink to="/products/new" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active add-product-link' : 'add-product-link'}><Plus size={16} /><span>{t('Add Product')}</span></NavLink>}
         </div>}
         <button className="side-section account-section" onClick={() => setAccountOpen((value) => !value)} aria-expanded={accountOpen}><span><UserRound size={17} /> {t('ACCOUNT')}</span><ChevronDown size={15} className={accountOpen ? 'section-chevron open' : 'section-chevron'} /></button>
         {accountOpen && <div className="side-subnav">
           <NavLink to="/account" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><CircleUserRound size={16} /><span>{t('Account Information')}</span></NavLink>
-          {canManageBusiness(auth.user) && <NavLink to="/branches" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Building2 size={16} /><span>{t('Manage Branches')}</span></NavLink>}
           {canManageAdmin(auth.user) && <NavLink to="/users" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Users size={16} /><span>{t('Users')}</span></NavLink>}
-          <NavLink to="/settings" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Settings size={16} /><span>{t('Settings')}</span></NavLink>
+          {canManageAdmin(auth.user) && <NavLink to="/settings" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Settings size={16} /><span>{t('Settings')}</span></NavLink>}
         </div>}
       </nav>
       <button className="logout" onClick={async () => { if (await auth.logout()) navigate('/login') }}><LogOut size={18} /> {t('Logout')}</button>
@@ -363,7 +363,7 @@ function AppShell({ children, title, auth, productHeader = false, saleHeader = f
         <button className="menu-button" onClick={() => setOpen(true)}><Menu size={21} /></button>
         {productHeader ? <><div className="product-breadcrumb"><span>{t('Overview')}</span><b>/</b><strong>{t(title)}</strong></div><div className="product-top-actions"><span>Kigali Main Store</span><div className="avatar">{initials}</div><div className="user-name"><strong>{auth.user?.name || 'Shop User'}</strong><span>{auth.user?.role || 'USER'}</span></div></div></> : saleHeader ? <><div className="sale-header-title"><ReceiptText size={16} /><strong>{t(title)}</strong></div><form className="global-search" onSubmit={(event) => { event.preventDefault(); navigate('/products', { state: { search: globalSearch } }) }}><Search size={15} /><input ref={globalSearchRef} value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} placeholder="Search products... (Ctrl+K)" /><kbd>Ctrl K</kbd></form><div className="sale-header-avatar">{initials}</div></> : <><div><p className="eyebrow">{t('Overview').toUpperCase()}</p><h1>{t(title)}</h1></div>
         <div className="top-actions">
-          <button className="icon-button"><Bell size={19} /><i /></button>
+          <button className="icon-button" type="button" aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}</button>
           <div className="avatar">{initials}</div>
           <div className="user-name"><strong>{auth.user?.name || 'Shop User'}</strong><span>{auth.user?.role || 'USER'}</span></div>
           <ChevronDown size={16} />
@@ -529,7 +529,7 @@ function Dashboard({ auth }) {
     </div>
     <div className="dashboard-grid dashboard-single"><Card className="recent"><SectionTitle title="Low stock products" text="Products at or below their alert level" link="/products" /><LowStockList items={[...outOfStockProducts, ...lowStockProducts].slice(0, 8)} /></Card></div>
     <Card className="recent dashboard-stock"><SectionTitle title="Recent imported stock" text="Latest inventory purchases by all users" link="/expenses" /><ResourceTable type="expenses" rows={(stock.data || []).slice(0, 5)} loading={stock.loading} error={stock.error} /></Card>
-    <Card className="quick"><div><h2>Quick actions</h2><p>Work faster</p></div><NavLink className="quick-action" to="/transactions/new"><Plus /> New transaction</NavLink>{canManageBusiness(auth.user) && <NavLink className="quick-action" to="/products/new"><Plus /> New product</NavLink>}<NavLink className="quick-action muted" to="/reports"><BarChart3 /> View reports</NavLink></Card>
+    <Card className="quick"><div><h2>Quick actions</h2><p>Work faster</p></div><NavLink className="quick-action" to="/transactions/new"><Plus /> New transaction</NavLink>{canManageAdmin(auth.user) && <NavLink className="quick-action" to="/products/new"><Plus /> New product</NavLink>}<NavLink className="quick-action muted" to="/reports"><BarChart3 /> View reports</NavLink></Card>
   </div></AppShell>
 }
 
@@ -568,11 +568,11 @@ function OfflineUnlock({ auth }) {
   }
   return <div className="login"><div className="login-panel">
     <div className="login-brand"><div className="brand-mark"><ReceiptText /></div><strong>MANAGEYOURSTOCK</strong></div>
-    <div className="login-copy"><h1>{t('Unlock offline data')}</h1><p>{auth.lockedAccount?.user?.name || t('Your account')} · {t('Enter your account PIN to access this device’s saved products and queued work.')}</p></div>
+    <div className="login-copy"><h1>{t('Unlock offline data')}</h1><p>{auth.lockedAccount?.user?.name || t('Your account')} · Enter your account password to access saved products and queued work.</p></div>
     {error && <Notice tone="error">{error}</Notice>}
     <form className="login-form" onSubmit={unlock}>
-      <label><span>{t('PIN')}</span><input inputMode="numeric" maxLength="4" pattern="[0-9]*" type="password" autoComplete="current-password" autoFocus value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} /></label>
-      <button className="login-button" disabled={pin.length !== 4 || loading}>{loading ? t('Unlocking…') : t('Unlock this device')}</button>
+      <label><span>Password</span><input type="password" autoComplete="current-password" autoFocus value={pin} onChange={(event) => setPin(event.target.value)} /></label>
+      <button className="login-button" disabled={!pin || loading}>{loading ? t('Unlocking…') : t('Unlock this device')}</button>
     </form>
     <button className="button secondary offline-online-login" type="button" onClick={auth.startOnlineLogin}>{t('Sign in online instead')}</button>
   </div></div>
@@ -581,7 +581,7 @@ function OfflineUnlock({ auth }) {
 function Login({ auth }) {
   const { t } = useContext(PreferencesContext)
   const [phoneNumber, setPhoneNumber] = useState('0788721005')
-  const [pin, setPin] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
@@ -590,8 +590,8 @@ function Login({ auth }) {
     event?.preventDefault()
     setLoading(true); setError('')
     try {
-      const { data } = await api.post('/auth/login', { phoneNumber, pin })
-      await auth.saveAuth(data.data, pin)
+      const { data } = await api.post('/auth/login', { phoneNumber, password })
+      await auth.saveAuth(data.data, password)
       navigate('/dashboard')
     } catch (error) {
       setError(apiMessage(error))
@@ -603,12 +603,12 @@ function Login({ auth }) {
   return <div className="login">
     <div className="login-panel">
       <div className="login-brand"><div className="brand-mark"><ReceiptText /></div><strong>MANAGEYOURSTOCK</strong></div>
-      <div className="login-copy"><h1>{t("Sign in")}</h1><p>{t("Enter your phone number and PIN.")}</p></div>
+      <div className="login-copy"><h1>{t("Sign in")}</h1><p>Enter your phone number and password.</p></div>
       {error && <Notice tone="error">{error}</Notice>}
       <form className="login-form" onSubmit={login}>
         <label><span>{t("Phone number")}</span><input value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="username" autoFocus placeholder="0788721005" /></label>
-        <label><span>{t("PIN")}</span><input inputMode="numeric" maxLength="4" pattern="[0-9]*" type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} autoComplete="current-password" placeholder={t("Enter 4-digit PIN")} /></label>
-        <button className="login-button" disabled={pin.length !== 4 || phoneNumber.length < 7 || loading}>{loading ? t("Signing in...") : t("Sign in securely")}</button>
+        <label><span>Password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label>
+        <button className="login-button" disabled={!password || phoneNumber.length < 7 || loading}>{loading ? t("Signing in...") : t("Sign in securely")}</button>
       </form>
     </div>
   </div>
@@ -635,20 +635,17 @@ function TransactionsPage({ auth, title = 'Transactions' }) {
 
 function SoldProductsPage({ auth }) {
   const [search, setSearch] = useState('')
-  const [branch, setBranch] = useState('')
   const [category, setCategory] = useState('')
   const [payment, setPayment] = useState('')
   const [refresh, setRefresh] = useState(0)
   const [page, setPage] = useState(1)
   const pageSize = 10
   const list = useApi('/transactions', { params: { limit: 200, refresh }, initial: [], refreshMs: liveRefreshMs })
-  const branchList = useApi('/branches', { initial: [] })
   const rows = (list.data || []).filter((row) => {
     const product = row.productId || {}
     const text = `${row.serviceOrProduct || row.productOrService || ''} ${product.name || ''} ${product.sku || ''} ${product.category || ''} ${product.description || ''}`.toLowerCase()
-    return (!search || text.includes(search.toLowerCase())) && (!branch || (row.branchId?._id || row.branchId) === branch) && (!category || product.category === category) && (!payment || row.paymentMethod === payment)
+    return (!search || text.includes(search.toLowerCase())) && (!category || product.category === category) && (!payment || row.paymentMethod === payment)
   })
-  const branches = branchList.data || []
   const categories = [...new Set((list.data || []).map((row) => row.productId?.category).filter(Boolean))].sort()
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize))
   const visiblePage = Math.min(page, pageCount)
@@ -660,7 +657,7 @@ function SoldProductsPage({ auth }) {
   }
   const totalSales = rows.length
   return <AppShell title="Sold Products" auth={auth} saleHeader><div className="page-content sold-products-page">
-    <div className="sold-product-filters"><label className="catalog-search"><Search size={14} /><input placeholder="Search by product, category, SKU, model..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} /></label><select value={branch} onChange={(event) => { setBranch(event.target.value); setPage(1) }}><option value="">All Branches</option>{branches.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}</select><select value={category} onChange={(event) => { setCategory(event.target.value); setPage(1) }}><option value="">All Categories</option>{categories.map((item) => <option key={item}>{item}</option>)}</select><select aria-label="Filter by payment type" value={payment} onChange={(event) => { setPayment(event.target.value); setPage(1) }}><option value="">All Payment Types</option><option value="CASH">Cash</option><option value="MOMO">Mobile Money</option><option value="CARD">Card</option><option value="BANK">Bank</option><option value="OTHER">Other</option></select><button type="button" className="button secondary" onClick={() => setRefresh((value) => value + 1)} disabled={list.loading}><RefreshCw size={13} /> Refresh</button></div>
+    <div className="sold-product-filters"><label className="catalog-search"><Search size={14} /><input placeholder="Search by product, category, SKU, model..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} /></label><select value={category} onChange={(event) => { setCategory(event.target.value); setPage(1) }}><option value="">All Categories</option>{categories.map((item) => <option key={item}>{item}</option>)}</select><select aria-label="Filter by payment type" value={payment} onChange={(event) => { setPayment(event.target.value); setPage(1) }}><option value="">All Payment Types</option><option value="CASH">Cash</option><option value="MOMO">Mobile Money</option><option value="CARD">Card</option><option value="BANK">Bank</option><option value="OTHER">Other</option></select><button type="button" className="button secondary" onClick={() => setRefresh((value) => value + 1)} disabled={list.loading}><RefreshCw size={13} /> Refresh</button></div>
     {list.error && <Notice tone="error">{list.error} <button className="button secondary" type="button" onClick={() => setRefresh((value) => value + 1)}>Retry</button></Notice>}
     {list.loading && !list.data?.length ? <div className="sold-products-loading">Loading sold products...</div> : <div className="sold-product-grid">{visibleRows.map((row) => {
       const product = row.productId || {}
@@ -680,7 +677,7 @@ function SoldProductsPage({ auth }) {
   </div></AppShell>
 }
 
-const blankProduct = { name: '', sku: '', category: '', brand: '', description: '', unit: 'Pieces (pcs)', costPrice: 0, sellingPrice: '', quantity: 0, lowStockLevel: 5, branchId: '', location: 'Shelf A2', supplier: '', status: 'ACTIVE', notes: '' }
+const blankProduct = { name: '', sku: '', category: '', brand: '', description: '', unit: 'Pieces (pcs)', costPrice: 0, sellingPrice: '', quantity: 0, lowStockLevel: 5, location: 'Shelf A2', supplier: '', status: 'ACTIVE', notes: '' }
 
 function LowStockList({ items = [] }) {
   const { t } = useContext(PreferencesContext)
@@ -693,7 +690,7 @@ function ProductsPage({ auth, initialAdd = false }) {
   const offlineSync = useOfflineSync()
   const navigate = useNavigate()
   const location = useLocation()
-  const [filters, setFilters] = useState({ search: location.state?.search || '', category: '', brand: '', branchId: '', status: '', lowStock: '' })
+  const [filters, setFilters] = useState({ search: location.state?.search || '', category: '', brand: '', status: '', lowStock: '' })
   const [refresh, setRefresh] = useState(0)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
@@ -706,22 +703,26 @@ function ProductsPage({ auth, initialAdd = false }) {
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [combinedCost, setCombinedCost] = useState(false)
-  const [customOptions, setCustomOptions] = useState({ category: [], brand: [], model: [], location: [] })
+  const [manageOptionsOpen, setManageOptionsOpen] = useState(false)
+  const [optionType, setOptionType] = useState('category')
+  const [optionName, setOptionName] = useState('')
+  const [optionEdit, setOptionEdit] = useState(null)
+  const [optionError, setOptionError] = useState('')
+  const [optionsRefresh, setOptionsRefresh] = useState(0)
   useEffect(() => {
     if (location.state?.search !== undefined) setFilters((current) => ({ ...current, search: location.state.search || '' }))
   }, [location.key, location.state?.search])
   const params = Object.fromEntries(Object.entries({ ...filters, refresh }).filter(([key, value]) => key !== 'brand' && key !== 'sort' && value !== ''))
   const list = useApi('/products', { params, initial: [], refreshMs: liveRefreshMs })
-  const branchList = useApi('/branches', { params: { refresh }, initial: [] })
+  const optionCatalog = useApi('/products/options', { params: { refresh: optionsRefresh }, initial: { categories: [], brands: [], models: [] } })
   const rows = mode === 'offline'
     ? offlineSync.products
     : (list.data?.length ? list.data : offlineSync.products)
-  const categories = [...new Set([...rows.map((row) => row.category).filter(Boolean), 'Electronics', 'Accessories', ...customOptions.category])]
-  const brands = [...new Set([...rows.map((row) => row.brand).filter(Boolean), 'Apple', 'Samsung', ...customOptions.brand])]
-  const models = [...new Set([...rows.map((row) => row.description).filter(Boolean), ...customOptions.model])]
-  const branches = branchList.data || []
+  const categories = [...new Set([...(optionCatalog.data?.categories || []), ...rows.map((row) => row.category).filter(Boolean)])]
+  const brands = [...new Set([...(optionCatalog.data?.brands || []), ...rows.map((row) => row.brand).filter(Boolean)])]
+  const models = [...new Set([...(optionCatalog.data?.models || []), ...rows.map((row) => row.description).filter(Boolean)])]
   const startAdd = () => { setEditingId(''); setForm(blankProduct); setCombinedCost(false); setFormOpen(true); setError(''); setMessage(''); navigate('/products/new') }
-  const startEdit = (row) => { setEditingId(row._id); setForm({ ...blankProduct, ...row, branchId: row.branchId?._id || row.branchId || '', sku: row.sku || '' }); setFormOpen(true); setError(''); setMessage('') }
+  const startEdit = (row) => { setEditingId(row._id); setForm({ ...blankProduct, ...row, sku: row.sku || '' }); setFormOpen(true); setError(''); setMessage('') }
   const submit = async (event) => {
     event.preventDefault(); setSaving(true); setError(''); setMessage('')
     const quantity = Number(form.quantity)
@@ -739,38 +740,62 @@ function ProductsPage({ auth, initialAdd = false }) {
     try { await api.delete(`/products/${product._id}`); setRefresh((v) => v + 1); setMessage('Product deleted.') } catch (deleteError) { setError(apiMessage(deleteError)) }
   }
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
-  const addOption = (key) => {
-    const value = window.prompt(`Enter new ${key === 'model' ? 'model' : key}`)?.trim()
-    if (!value) return
-    setCustomOptions((current) => ({ ...current, [key]: [...new Set([...current[key], value])] }))
-    set(key === 'model' ? 'description' : key, value)
+  const saveOption = async (event) => {
+    event.preventDefault()
+    const name = optionName.trim()
+    if (!name) return
+    setOptionError('')
+    try {
+      await api.post('/products/options', { type: optionType, name })
+      setOptionName('')
+      setOptionsRefresh((value) => value + 1)
+    } catch (optionSaveError) { setOptionError(apiMessage(optionSaveError)) }
+  }
+  const renameOption = async (event) => {
+    event.preventDefault()
+    const nextName = optionEdit?.value?.trim()
+    if (!nextName) return
+    setOptionError('')
+    try {
+      await api.patch(`/products/options/${optionEdit.type}`, { name: optionEdit.name, newName: nextName })
+      setOptionEdit(null)
+      setOptionsRefresh((value) => value + 1)
+      setRefresh((value) => value + 1)
+    } catch (optionSaveError) { setOptionError(apiMessage(optionSaveError)) }
+  }
+  const deleteOption = async (type, name) => {
+    if (!window.confirm(`Remove “${name}”? Products using this ${type} will keep the product, but this value will be cleared.`)) return
+    setOptionError('')
+    try {
+      await api.patch(`/products/options/${type}`, { name, newName: null })
+      setOptionsRefresh((value) => value + 1)
+      setRefresh((value) => value + 1)
+    } catch (optionSaveError) { setOptionError(apiMessage(optionSaveError)) }
   }
   const visibleRows = rows.filter((row) => (!filters.brand || row.brand === filters.brand)
     && (!filters.category || row.category === filters.category)
     && (!filters.status || row.status === filters.status)
-    && (!filters.branchId || String(row.branchId?._id || row.branchId || '') === filters.branchId)
     && (!filters.search || `${row.name} ${row.sku || ''} ${row.category || ''} ${row.brand || ''} ${row.description || ''}`.toLowerCase().includes(filters.search.toLowerCase())))
     .sort((a, b) => filters.sort === 'name' ? a.name.localeCompare(b.name) : filters.sort === 'oldest' ? new Date(a.createdAt) - new Date(b.createdAt) : new Date(b.createdAt) - new Date(a.createdAt))
   const pageCount = Math.max(1, Math.ceil(visibleRows.length / pageSize))
   const pageRows = visibleRows.slice((page - 1) * pageSize, page * pageSize)
   const totalQuantity = rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
   const toggleRow = (id) => setSelectedRows((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])
-  const duplicate = (row) => { setEditingId(''); setForm({ ...blankProduct, ...row, branchId: row.branchId?._id || row.branchId || '', _id: undefined, name: `${row.name} copy`, sku: '', quantity: 0 }); setFormOpen(true); navigate('/products/new') }
+  const duplicate = (row) => { setEditingId(''); setForm({ ...blankProduct, ...row, _id: undefined, name: `${row.name} copy`, sku: '', quantity: 0 }); setFormOpen(true); navigate('/products/new') }
   const setStatus = async (row) => {
     const product = Object.fromEntries(Object.entries(row).filter(([key]) => !['_id', 'createdAt', 'updatedAt', 'addedBy', 'lastUpdatedBy', '__v'].includes(key)))
-    product.branchId = row.branchId?._id || row.branchId || ''
     try { await api.put(`/products/${row._id}`, { ...product, status: row.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }); setRefresh((value) => value + 1) } catch (statusError) { setError(apiMessage(statusError)) }
   }
   return <AppShell title={formOpen ? (editingId ? 'Edit Product' : 'Add New Product') : 'Products'} auth={auth} saleHeader><div className={'page-content products-content' + (formOpen ? ' product-add-content' : '')}>
-    {!formOpen && <div className="products-toolbar"><div><h2>Products</h2><p>{totalQuantity} Total Items ({rows.length} unique products)</p></div><div className="products-toolbar-actions"><button className="button secondary" onClick={() => setRefresh((value) => value + 1)}><RefreshCw size={13} /> Refresh</button><div className="view-switch"><button className={cardView ? 'selected' : ''} aria-label="Card view" onClick={() => setCardView(true)}><Grid2X2 size={14} /></button><button className={!cardView ? 'selected' : ''} aria-label="List view" onClick={() => setCardView(false)}><List size={14} /></button></div><NavLink className="button record-sale-button" to="/transactions/new"><ShoppingCart size={13} /> Record Sale</NavLink>{canManageBusiness(auth.user) && <button className="button" onClick={startAdd}><Plus size={14} /> Add Product</button>}</div></div>}
+    {!formOpen && <div className="products-toolbar"><div><h2>Products</h2><p>{totalQuantity} Total Items ({rows.length} unique products)</p></div><div className="products-toolbar-actions"><button className="button secondary" onClick={() => setRefresh((value) => value + 1)}><RefreshCw size={13} /> Refresh</button><div className="view-switch"><button className={cardView ? 'selected' : ''} aria-label="Card view" onClick={() => setCardView(true)}><Grid2X2 size={14} /></button><button className={!cardView ? 'selected' : ''} aria-label="List view" onClick={() => setCardView(false)}><List size={14} /></button></div>{canManageAdmin(auth.user) && mode !== 'offline' && <button className="button secondary" onClick={() => setManageOptionsOpen((value) => !value)}><Settings size={13} /> {manageOptionsOpen ? 'Close options' : 'Manage options'}</button>}<NavLink className="button record-sale-button" to="/transactions/new"><ShoppingCart size={13} /> Record Sale</NavLink>{canManageAdmin(auth.user) && <button className="button" onClick={startAdd}><Plus size={14} /> Add Product</button>}</div></div>}
     {message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
+    {manageOptionsOpen && !formOpen && <Card className="product-options-manager"><div className="product-options-heading"><div><h3>Manage product options</h3><p>Rename a value to update products using it. Delete clears the value from those products.</p></div></div>{optionError && <Notice tone="error">{optionError}</Notice>}<div className="product-option-tabs">{[['category','Categories'],['brand','Brands'],['model','Models']].map(([type,label]) => <button type="button" className={optionType === type ? 'active' : ''} key={type} onClick={() => { setOptionType(type); setOptionEdit(null); setOptionError('') }}>{label}</button>)}</div><form className="product-option-add" onSubmit={saveOption}><input aria-label="New option name" placeholder={`Add ${optionType}`} value={optionName} onChange={(event) => setOptionName(event.target.value)} required /><button className="button" type="submit"><Plus size={14} /> Add</button></form><div className="product-option-list">{(optionType === 'category' ? categories : optionType === 'brand' ? brands : models).map((name) => <div className="product-option-row" key={`${optionType}-${name}`}>{optionEdit?.type === optionType && optionEdit?.name === name ? <form onSubmit={renameOption}><input autoFocus value={optionEdit.value} onChange={(event) => setOptionEdit({ ...optionEdit, value: event.target.value })} required /><button className="button" type="submit">Save</button><button className="button secondary" type="button" onClick={() => setOptionEdit(null)}>Cancel</button></form> : <><span>{name}</span><div><button type="button" className="button secondary" onClick={() => setOptionEdit({ type: optionType, name, value: name })}><Edit2 size={13} /> Rename</button><button type="button" className="button secondary option-delete" onClick={() => deleteOption(optionType, name)}><Trash2 size={13} /> Delete</button></div></>}</div>)}{!(optionType === 'category' ? categories : optionType === 'brand' ? brands : models).length && <p className="product-option-empty">No {optionType} options yet. Add one above.</p>}</div></Card>}
     {formOpen && <><div className="product-add-heading"><div><h2>{editingId ? 'Edit Product' : 'Register New Stock Product'}</h2><p>Fill in product details to register new inventory stock.</p></div><button type="button" className="button secondary" onClick={() => { setFormOpen(false); navigate('/products') }}>â† Back to Products</button></div><Card className="form-card product-form"><form onSubmit={submit}>
       <section className="product-form-section"><h3>PRODUCT INFORMATION</h3><div className="product-form-grid product-info-grid">
         <Field label={<>Product name <i>*</i></>}><input required placeholder="e.g. iPhone 15 Pro Max" value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
-        <Field label="SKU / Product code"><input placeholder="Optional unique code" value={form.sku || ''} onChange={(e) => set('sku', e.target.value.toUpperCase())} /></Field>
-        <ProductChoice label="Category" required value={form.category} options={categories} onChange={(value) => set('category', value)} onAdd={() => addOption('category')} />
-        <ProductChoice label="Brand" required value={form.brand} options={brands} onChange={(value) => set('brand', value)} onAdd={() => addOption('brand')} />
-        <ProductChoice label="Model" value={form.description} options={models} onChange={(value) => set('description', value)} onAdd={() => addOption('model')} />
+        <ProductChoice label="Category" required value={form.category} options={categories} onChange={(value) => set('category', value)} />
+        <ProductChoice label="Brand" required value={form.brand} options={brands} onChange={(value) => set('brand', value)} />
+        <ProductChoice label="Model" value={form.description} options={models} onChange={(value) => set('description', value)} />
       </div></section>
       <section className="product-form-section"><h3>STOCK AND PRICING</h3><div className="product-form-grid stock-pricing-grid">
         <Field label={<>Quantity <i>*</i></>}><input required min="0" type="number" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} /></Field>
@@ -779,14 +804,14 @@ function ProductsPage({ auth, initialAdd = false }) {
         <MoneyField label="Selling price (per unit)" value={form.sellingPrice} onChange={(value) => set('sellingPrice', value)} placeholder={t("Optional")} />
       </div><label className="total-cost-toggle"><input type="checkbox" checked={combinedCost} onChange={(e) => setCombinedCost(e.target.checked)} /><span>This price is for all items combined (total cost)</span></label></section>
       <section className="product-form-section"><h3>STORAGE AND SUPPLIER</h3><div className="product-form-grid storage-grid">
-        <Field label={<>{t('Branch')} <i>*</i></>}><select required value={form.branchId || ''} onChange={(e) => { const branch = branches.find((item) => item._id === e.target.value); setForm((current) => ({ ...current, branchId: e.target.value, location: branch?.name || current.location })) }}><option value="">{t('Select branch')}</option>{branches.filter((branch) => branch.status === 'ACTIVE' || branch._id === form.branchId).map((branch) => <option key={branch._id} value={branch._id}>{branch.name}</option>)}</select></Field>
+        
         <Field label={<>{t('Storage location')} <i>*</i></>}><input required placeholder="e.g. Shelf A2, Back store" value={form.location} onChange={(e) => set('location', e.target.value)} /></Field>
         <Field label="Supplier (name or phone number)"><input placeholder="e.g. Apple Store or 0788123456" value={form.supplier} onChange={(e) => set('supplier', e.target.value)} /></Field>
       </div><p className="form-hint">Shown when this product is chosen during a sale.</p></section>
       {editingId && <div className="product-meta">Added {form.createdAt ? new Date(form.createdAt).toLocaleDateString() : 'â€”'} Â· {form.addedBy?.name || form.addedBy?.fullName || auth.user?.name || 'â€”'} Â· Updated {form.updatedAt ? new Date(form.updatedAt).toLocaleString() : 'â€”'}</div>}
       <div className="form-actions"><button type="button" className="button secondary" onClick={() => { setFormOpen(false); navigate('/products') }}>Cancel / Back</button><button className="button" disabled={saving}>{saving ? 'Saving...' : 'Record New Product'}</button></div></form></Card></>}
-    {!formOpen && <><div className="product-catalog-filters"><label className="catalog-search"><Search size={14} /><input placeholder="Search products..." value={filters.search} onChange={(e) => { setFilters({ ...filters, search: e.target.value }); setPage(1) }} /></label><select value={filters.brand} onChange={(e) => { setFilters({ ...filters, brand: e.target.value }); setPage(1) }}><option value="">All Brands</option>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select><select value={filters.category} onChange={(e) => { setFilters({ ...filters, category: e.target.value }); setPage(1) }}><option value="">All Categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><select value={filters.status} onChange={(e) => { setFilters({ ...filters, status: e.target.value }); setPage(1) }}><option value="">All Statuses</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select><select value={filters.branchId} onChange={(e) => { setFilters({ ...filters, branchId: e.target.value }); setPage(1) }}><option value="">All Branches</option>{branches.map((branch) => <option key={branch._id} value={branch._id}>{branch.name}</option>)}</select><select value={filters.sort || 'latest'} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}><option value="latest">Sort: Latest Added</option><option value="oldest">Sort: Oldest Added</option><option value="name">Sort: Product Name</option></select></div>
-    {cardView ? <div className="product-card-grid">{mode !== 'offline' && list.loading && <Card className="catalog-state">Loading products...</Card>}{mode !== 'offline' && list.error && !rows.length && <Notice tone="error">{list.error}</Notice>}{(mode === 'offline' || (!list.loading && !list.error)) && pageRows.map((product) => { const low = Number(product.quantity) > 0 && Number(product.quantity) <= Number(product.lowStockLevel); return <article className="catalog-product-card" key={product._id}><div className="catalog-image"><div className="catalog-image-placeholder"><Package size={38} /><span>{product.category || 'PRODUCT'}</span></div><input type="checkbox" checked={selectedRows.includes(product._id)} onChange={() => toggleRow(product._id)} aria-label={`Select ${product.name}`} /><span className="catalog-category">{product.category || 'PRODUCT'}</span></div><div className="catalog-product-body"><div className="catalog-product-title"><strong>{product.brand || 'Product'}</strong><span>{product.location || 'â€”'}</span></div><p className="catalog-model">{product.name}{product.description ? ` Â· Model: ${product.description}` : ''}</p><div className="catalog-stock-row"><span>Quantity<br /><b>{product.quantity} {product.unit || 'pcs'}</b></span><span>Status<br /><b className={product.status === 'ACTIVE' ? (low ? 'text-low' : 'text-in-stock') : 'text-inactive'}>{product.status === 'ACTIVE' ? (Number(product.quantity) === 0 ? 'Out of Stock' : low ? 'Low Stock' : 'In Stock') : 'Inactive'}</b></span></div><div className="catalog-price-row"><span>Price on Sale<br /><b>{money(product.sellingPrice)} RWF</b></span><span>Confirmed<br /><b className="text-confirmed">Yes</b></span></div><div className="catalog-cost-row"><span>Cost Price<br /><b>{money(product.costPrice)} RWF</b></span><span>Total Value<br /><b>{money(Number(product.costPrice || 0) * Number(product.quantity || 0))} RWF</b></span></div></div><div className="catalog-product-actions">{canManageBusiness(auth.user) && <><button type="button" className="catalog-status-button" onClick={() => setStatus(product)}><span>â–³</span> {product.status === 'ACTIVE' ? 'Unconfirm' : 'Confirm'}</button><button title="Edit product" onClick={() => startEdit(product)}><Edit2 size={13} /></button><button title="Duplicate product" onClick={() => duplicate(product)}><Copy size={13} /></button><button title="View product" onClick={() => startEdit(product)}><Eye size={13} /></button></>}<NavLink title="Record sale" to="/transactions/new"><ShoppingCart size={13} /></NavLink>{canManageBusiness(auth.user) && <button title="Delete product" className="delete-action" onClick={() => remove(product)}><Trash2 size={13} /></button>}</div></article> })}{mode === 'offline' && !pageRows.length && <Card className="catalog-state">No saved products found on this device.</Card>}{mode !== 'offline' && !list.loading && !list.error && !pageRows.length && <Card className="catalog-state">No products found.</Card>}</div> : <Card className="recent"><div className="table-wrap"><table className="product-table"><thead><tr>{['Product name','SKU','Category','Brand','Selling price','Cost price','Quantity in stock','Storage location','Status','Actions'].map((col) => <th key={col}>{col}</th>)}</tr></thead><tbody><TableState loading={mode !== 'offline' && list.loading} error={mode === 'offline' ? '' : list.error} empty={!pageRows.length} colSpan={10} />{pageRows.map((product) => <tr key={product._id}><td><strong>{product.name}</strong></td><td>{product.sku || 'â€”'}</td><td>{product.category || 'â€”'}</td><td>{product.brand || 'â€”'}</td><td>{money(product.sellingPrice)} RWF</td><td>{money(product.costPrice)} RWF</td><td>{product.quantity} {product.unit}</td><td>{product.location}</td><td><span className={product.status === 'ACTIVE' ? 'stock-badge active' : 'stock-badge inactive'}>{product.status === 'ACTIVE' ? 'Active' : 'Inactive'}</span>{Number(product.quantity) === 0 ? <span className="stock-badge out">Out of Stock</span> : Number(product.quantity) <= Number(product.lowStockLevel) && <span className="stock-badge low">Low Stock</span>}</td><td>{canManageBusiness(auth.user) && <><button className="row-action" aria-label="Edit product" onClick={() => startEdit(product)}><Edit2 size={16} /></button><button className="row-action" aria-label="Delete product" onClick={() => remove(product)}><Trash2 size={16} /></button></>}</td></tr>)}</tbody></table></div></Card>}
+    {!formOpen && <><div className="product-catalog-filters"><label className="catalog-search"><Search size={14} /><input placeholder="Search products..." value={filters.search} onChange={(e) => { setFilters({ ...filters, search: e.target.value }); setPage(1) }} /></label><select value={filters.brand} onChange={(e) => { setFilters({ ...filters, brand: e.target.value }); setPage(1) }}><option value="">All Brands</option>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select><select value={filters.category} onChange={(e) => { setFilters({ ...filters, category: e.target.value }); setPage(1) }}><option value="">All Categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><select value={filters.status} onChange={(e) => { setFilters({ ...filters, status: e.target.value }); setPage(1) }}><option value="">All Statuses</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select><select value={filters.sort || 'latest'} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}><option value="latest">Sort: Latest Added</option><option value="oldest">Sort: Oldest Added</option><option value="name">Sort: Product Name</option></select></div>
+    {cardView ? <div className="product-card-grid">{mode !== 'offline' && list.loading && <Card className="catalog-state">Loading products...</Card>}{mode !== 'offline' && list.error && !rows.length && <Notice tone="error">{list.error}</Notice>}{(mode === 'offline' || (!list.loading && !list.error)) && pageRows.map((product) => { const low = Number(product.quantity) > 0 && Number(product.quantity) <= Number(product.lowStockLevel); return <article className="catalog-product-card" key={product._id}><div className="catalog-image"><div className="catalog-image-placeholder"><Package size={38} /><span>{product.category || 'PRODUCT'}</span></div><input type="checkbox" checked={selectedRows.includes(product._id)} onChange={() => toggleRow(product._id)} aria-label={`Select ${product.name}`} /><span className="catalog-category">{product.category || 'PRODUCT'}</span></div><div className="catalog-product-body"><div className="catalog-product-title"><strong>{product.brand || 'Product'}</strong><span>{product.location || 'â€”'}</span></div><p className="catalog-model">{product.name}{product.description ? ` Â· Model: ${product.description}` : ''}</p><div className="catalog-stock-row"><span>Quantity<br /><b>{product.quantity} {product.unit || 'pcs'}</b></span><span>Status<br /><b className={product.status === 'ACTIVE' ? (low ? 'text-low' : 'text-in-stock') : 'text-inactive'}>{product.status === 'ACTIVE' ? (Number(product.quantity) === 0 ? 'Out of Stock' : low ? 'Low Stock' : 'In Stock') : 'Inactive'}</b></span></div><div className="catalog-price-row"><span>Price on Sale<br /><b>{money(product.sellingPrice)} RWF</b></span><span>Confirmed<br /><b className="text-confirmed">Yes</b></span></div><div className="catalog-cost-row"><span>Cost Price<br /><b>{money(product.costPrice)} RWF</b></span><span>Total Value<br /><b>{money(Number(product.costPrice || 0) * Number(product.quantity || 0))} RWF</b></span></div></div><div className="catalog-product-actions">{canManageAdmin(auth.user) && <><button type="button" className="catalog-status-button" onClick={() => setStatus(product)}><span>â–³</span> {product.status === 'ACTIVE' ? 'Unconfirm' : 'Confirm'}</button><button title="Edit product" onClick={() => startEdit(product)}><Edit2 size={13} /></button><button title="Duplicate product" onClick={() => duplicate(product)}><Copy size={13} /></button><button title="View product" onClick={() => startEdit(product)}><Eye size={13} /></button></>}<NavLink title="Record sale" to="/transactions/new"><ShoppingCart size={13} /></NavLink>{canManageAdmin(auth.user) && <button title="Delete product" className="delete-action" onClick={() => remove(product)}><Trash2 size={13} /></button>}</div></article> })}{mode === 'offline' && !pageRows.length && <Card className="catalog-state">No saved products found on this device.</Card>}{mode !== 'offline' && !list.loading && !list.error && !pageRows.length && <Card className="catalog-state">No products found.</Card>}</div> : <Card className="recent"><div className="table-wrap"><table className="product-table"><thead><tr>{['Product name','SKU','Category','Brand','Selling price','Cost price','Quantity in stock','Storage location','Status','Actions'].map((col) => <th key={col}>{col}</th>)}</tr></thead><tbody><TableState loading={mode !== 'offline' && list.loading} error={mode === 'offline' ? '' : list.error} empty={!pageRows.length} colSpan={10} />{pageRows.map((product) => <tr key={product._id}><td><strong>{product.name}</strong></td><td>{product.sku || 'â€”'}</td><td>{product.category || 'â€”'}</td><td>{product.brand || 'â€”'}</td><td>{money(product.sellingPrice)} RWF</td><td>{money(product.costPrice)} RWF</td><td>{product.quantity} {product.unit}</td><td>{product.location}</td><td><span className={product.status === 'ACTIVE' ? 'stock-badge active' : 'stock-badge inactive'}>{product.status === 'ACTIVE' ? 'Active' : 'Inactive'}</span>{Number(product.quantity) === 0 ? <span className="stock-badge out">Out of Stock</span> : Number(product.quantity) <= Number(product.lowStockLevel) && <span className="stock-badge low">Low Stock</span>}</td><td>{canManageAdmin(auth.user) && <><button className="row-action" aria-label="Edit product" onClick={() => startEdit(product)}><Edit2 size={16} /></button><button className="row-action" aria-label="Delete product" onClick={() => remove(product)}><Trash2 size={16} /></button></>}</td></tr>)}</tbody></table></div></Card>}
     <div className="catalog-pagination"><span>Showing {visibleRows.length ? (page - 1) * pageSize + 1 : 0} to {Math.min(page * pageSize, visibleRows.length)} of {visibleRows.length} products</span><select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}><option value="10">10 per page</option><option value="25">25 per page</option><option value="50">50 per page</option></select><div><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>â€¹ Previous</button><b>{page}</b><button disabled={page >= pageCount} onClick={() => setPage((value) => value + 1)}>Next â€º</button></div></div></>}
   </div></AppShell>
 }
@@ -877,10 +902,10 @@ function Field({ label, children }) {
   return <label><span>{localizeNode(label, t)}</span>{localizeNode(children, t)}</label>
 }
 
-function ProductChoice({ label, value, options, onChange, onAdd, required = false, wide = false }) {
+function ProductChoice({ label, value, options, onChange, required = false, wide = false }) {
   const { t } = useContext(PreferencesContext)
   return <div className={'product-choice' + (wide ? ' wide' : '')}>
-    <div className="product-choice-heading"><span>{t(label)}{required && <> <i>*</i></>}</span><button type="button" onClick={onAdd}>{t('+ Add new')}</button></div>
+    <div className="product-choice-heading"><span>{t(label)}{required && <> <i>*</i></>}</span></div>
     <select required={required} value={value} onChange={(event) => onChange(event.target.value)}>
       <option value="">{t('Select')} {t(label.toLowerCase())}</option>
       {options.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -906,34 +931,18 @@ function Hero({ title, text, action, actionText }) {
 function ReportsPage({ auth }) {
   const [range, setRange] = useState({ fromDate: today, toDate: today })
   const [refresh, setRefresh] = useState(0)
-  const [adding, setAdding] = useState(false)
-  const [draft, setDraft] = useState(emptyTransaction)
-  const [saving, setSaving] = useState(false)
+  const [selectedUser, setSelectedUser] = useState('')
+  const isAdmin = canManageAdmin(auth.user)
+  const users = useApi('/users', { initial: [], enabled: isAdmin })
   const reportParams = Object.fromEntries(Object.entries(range).filter(([, value]) => value))
+  if (isAdmin && selectedUser) reportParams.userId = selectedUser
   reportParams.refresh = refresh
   const report = useApi('/reports/sales', { params: reportParams, initial: { transactions: [], paymentMethods: {} }, refreshMs: liveRefreshMs })
   const data = report.data || {}
-  const saveRow = async () => {
-    setSaving(true)
-    try {
-      await api.post('/transactions', { ...draft, transactionDate: new Date().toISOString() })
-      setDraft(emptyTransaction)
-      setAdding(false)
-      setRefresh((value) => value + 1)
-    } finally {
-      setSaving(false)
-    }
-  }
-  const updateTransaction = async (id, data) => {
-    await api.put(`/transactions/${id}`, data)
-    setRefresh((value) => value + 1)
-  }
-  const deleteTransaction = async (id) => {
-    await api.delete(`/transactions/${id}`)
-    setRefresh((value) => value + 1)
-  }
   const downloadReport = async () => {
-    const params = new URLSearchParams(Object.fromEntries(Object.entries(range).filter(([, value]) => value))).toString()
+    const downloadParams = Object.fromEntries(Object.entries(range).filter(([, value]) => value))
+    if (isAdmin && selectedUser) downloadParams.userId = selectedUser
+    const params = new URLSearchParams(downloadParams).toString()
     const response = await fetch(`${API_BASE_URL}/reports/sales/pdf?${params}`, {
       headers: { Authorization: `Bearer ${sessionStorage.getItem('shop_report_token')}` },
     })
@@ -942,13 +951,15 @@ function ReportsPage({ auth }) {
   }
 
   return <AppShell title="Reports" auth={auth}><div className="page-content">
-    <Card className="page-hero"><div><p className="eyebrow">REPORTING</p><h2>Daily reports</h2><p>Totals update automatically from saved transactions.</p></div><div className="hero-buttons"><button className="button" onClick={downloadReport}>Download report</button></div></Card>
+    <Card className="page-hero"><div><p className="eyebrow">REPORTING</p><h2>Sales performance</h2><p>Review recorded sales and payment activity for the selected period.</p></div><div className="hero-buttons"><button className="button" onClick={downloadReport}>Download report</button></div></Card>
     <DateControls range={range} setRange={setRange} compact onSearch={() => setRefresh((value) => value + 1)} />
+    {isAdmin && <Card className="report-filter"><label htmlFor="sales-user-filter">Salesperson</label><select id="sales-user-filter" value={selectedUser} onChange={(event) => setSelectedUser(event.target.value)}><option value="">All users</option>{(users.data || []).map((user) => <option key={user._id || user.id} value={user._id || user.id}>{user.fullName || user.name} · {user.role}{user.status === 'INACTIVE' ? ' (inactive)' : ''}</option>)}</select></Card>}
     <div className="stat-grid report-stats">{[
-      ['Total amount', data.totalAmount ?? data.totalPaid], ['Total Cash Out', data.totalCashOut], ['Total Cash In', data.totalCashIn ?? data.totalMoneyEarned], ['Total remaining money', data.totalRemainingMoney ?? data.totalRemaining], ['Cash received', data.totalCash], ['MoMo Pay received', data.totalMomo], ['Current stock value', data.currentStockValue],
-    ].map(([label, value]) => <Card className="stat-card" key={label}><p>{label}</p><h2>{money(value)} <small>RWF</small></h2></Card>)}</div>
+      ['Total sales', data.totalAmount ?? data.totalPaid], ['Transactions', data.totalTransactions], ['Cash out', data.totalCashOut], ['Cash in', data.totalCashIn ?? data.totalMoneyEarned], ['Outstanding', data.totalRemainingMoney ?? data.totalRemaining],
+    ].map(([label, value]) => <Card className="stat-card" key={label}><p>{label}</p><h2>{money(value)}{label === 'Transactions' ? <small> sales</small> : <small> RWF</small>}</h2></Card>)}</div>
+    {isAdmin && <Card className="recent report-user-summary"><SectionTitle title="Sales by user" text={selectedUser ? 'Showing this user’s sales for the selected period' : 'Compare each team member’s sales for the selected period'} /><div className="table-wrap report-user-table"><table className="simple-table"><thead><tr><th>User</th><th>Transactions</th><th>Sales</th><th>Cash out</th><th>Cash in</th></tr></thead><tbody>{(data.salesByUser || []).length ? data.salesByUser.map((item) => <tr key={item.userId || item.name}><td><strong>{item.name}</strong></td><td>{item.transactions}</td><td>{money(item.sales)} RWF</td><td>{money(item.cashOut)} RWF</td><td>{money(item.cashIn)} RWF</td></tr>) : <tr><td colSpan="5" className="empty-cell">No sales for this user in this period.</td></tr>}</tbody></table></div><div className="report-user-cards">{(data.salesByUser || []).length ? data.salesByUser.map((item) => <article className="report-user-card" key={item.userId || item.name}><div><strong>{item.name}</strong><span>{item.transactions} {item.transactions === 1 ? 'transaction' : 'transactions'}</span></div><b>{money(item.sales)} <small>RWF sales</small></b><dl><div><dt>Cash out</dt><dd>{money(item.cashOut)} RWF</dd></div><div><dt>Cash in</dt><dd>{money(item.cashIn)} RWF</dd></div></dl></article>) : <p className="report-user-empty">No sales for this user in this period.</p>}</div></Card>}
     <Card className="recent"><SectionTitle title="Best-selling products" text="Ranked by quantity sold in the selected period" /><div className="table-wrap"><table className="simple-table"><thead><tr><th>Product</th><th>SKU</th><th>Quantity sold</th><th>Sales</th></tr></thead><tbody>{(data.bestSellingProducts || []).length ? data.bestSellingProducts.map((item) => <tr key={item.productId}><td><strong>{item.name}</strong></td><td>{item.sku || 'â€”'}</td><td>{item.quantitySold}</td><td>{money(item.sales)} RWF</td></tr>) : <tr><td colSpan="4" className="empty-cell">No product sales for this period.</td></tr>}</tbody></table></div></Card>
-    <Card className="recent"><SectionTitle title="Sales report" text="Transactions for the selected device date" action={<button className="button" onClick={() => setAdding(true)}><Plus size={16} /> Add row</button>} /><TransactionTable rows={data.transactions || []} loading={report.loading} error={report.error} adding={adding} draft={draft} setDraft={setDraft} onSave={saveRow} onCancel={() => { setAdding(false); setDraft(emptyTransaction) }} saving={saving} onUpdate={updateTransaction} onDelete={deleteTransaction} currentUser={auth.user} /></Card>
+    <Card className="recent"><SectionTitle title="Sales transactions" text="Recorded sales for the selected date range" /><TransactionTable rows={data.transactions || []} loading={report.loading} error={report.error} /></Card>
   </div></AppShell>
 }
 
@@ -977,12 +988,13 @@ function ResourcePage({ auth, type, title }) {
   const submit = async (event) => {
     event.preventDefault(); setSaving(true); setMessage(''); setError('')
     try {
-      if (editingId) await api.put(`${endpoints[type]}/${editingId}`, normalizeForm(type, form, Boolean(editingId)))
-      else await api.post(endpoints[type], normalizeForm(type, form))
+      let response
+      if (editingId) response = await api.put(`${endpoints[type]}/${editingId}`, normalizeForm(type, form, true))
+      else response = await api.post(endpoints[type], normalizeForm(type, form))
       setForm({})
       setEditingId('')
       setRefresh((x) => x + 1)
-      setMessage(editingId ? 'Saved successfully.' : 'Created successfully.')
+      setMessage(editingId ? 'Saved successfully.' : type === 'users' ? `Created successfully. Default password: ${response.data.data.defaultPassword}` : 'Created successfully.')
     } catch (error) {
       setError(apiMessage(error))
     } finally {
@@ -992,7 +1004,7 @@ function ResourcePage({ auth, type, title }) {
   const edit = (row) => {
     if (type !== 'users') return
     setEditingId(row._id)
-    setForm({ username: row.fullName || row.name || '', phoneNumber: row.phoneNumber || '', pin: '' })
+    setForm({ name: row.fullName || row.name || '', phoneNumber: row.phoneNumber || '', role: row.role || 'STAFF', status: row.status || 'ACTIVE' })
   }
   const remove = async (id) => {
     setMessage(''); setError('')
@@ -1053,23 +1065,23 @@ function ResourcePage({ auth, type, title }) {
     {type === 'expenses' ? <Card className="page-hero"><div><p className="eyebrow">MANAGEMENT</p><h2>{title}</h2><p>Imported stock by selected date.</p></div><div className="hero-buttons"><button className="button" onClick={downloadStockReport}>Download report</button></div></Card> : <Hero title={title} text={type === 'logs' ? 'Review team activity across the system.' : `Manage ${title.toLowerCase()} from the live database.`} />}
     {type === 'expenses' && <DateControls range={range} setRange={setRange} compact onSearch={() => setRefresh((value) => value + 1)} />}
     {message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
-    {type === 'expenses' && sync.snapshot.operations.some((operation) => operation.kind === 'import') && <Card className="recent offline-import-queue"><SectionTitle title="Offline imports" text="Queued imports are kept on this device until confirmed by the server." /><div className="table-wrap"><table><thead><tr><th>Product</th><th>Quantity</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead><tbody>{sync.snapshot.operations.filter((operation) => operation.kind === 'import').map((operation) => { const product = sync.products.find((row) => String(row._id || row.id) === String(operation.payload.productId)); return <tr key={operation.operationId}><td>{product?.name || 'Product'}</td><td>{operation.payload.stockQuantity}</td><td>{operation.payload.description}</td><td>{money(operation.payload.amount)} RWF</td><td>{operation.status === 'pending' ? 'Pending sync' : operation.status === 'conflict' ? 'Conflict' : 'Needs attention'}</td></tr> })}</tbody></table></div></Card>}
-    {type === 'users' && <Card className="form-card compact-form"><SectionTitle title={editingId ? 'Edit user' : 'Add user'} text="Username, phone number, and PIN only." /><form onSubmit={submit}><ResourceFields type={type} form={form} setForm={setForm} editing={Boolean(editingId)} /><div className="form-actions">{editingId && <button type="button" className="button secondary" onClick={() => { setEditingId(''); setForm({}) }}>Cancel edit</button>}<button className="button" disabled={saving}>{saving ? t("Saving...") : t("Save")}</button></div></form></Card>}
-    <Card className="recent"><SectionTitle title={`All ${title.toLowerCase()}`} text={type === 'expenses' ? 'Inventory purchases' : 'Live records from MongoDB'} action={type === 'expenses' && <button className="button" onClick={() => setAddingRow(true)}><Plus size={16} /> Add row</button>} /><ResourceTable type={type} rows={data || []} loading={(type === 'logs' ? resource : list).loading} error={(type === 'logs' ? resource : list).error} onDelete={remove} onEdit={type === 'expenses' ? undefined : edit} onUpdate={type === 'expenses' ? updateStockRow : undefined} adding={addingRow} draft={rowDraft} setDraft={setRowDraft} onSave={saveStockRow} onCancel={() => { setAddingRow(false); setRowDraft(emptyStock) }} saving={saving} currentUser={auth.user} /></Card>
+    {type === 'expenses' && canManageAdmin(auth.user) && sync.snapshot.operations.some((operation) => operation.kind === 'import') && <Card className="recent offline-import-queue"><SectionTitle title="Offline imports" text="Queued imports are kept on this device until confirmed by the server." /><div className="table-wrap"><table><thead><tr><th>Product</th><th>Quantity</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead><tbody>{sync.snapshot.operations.filter((operation) => operation.kind === 'import').map((operation) => { const product = sync.products.find((row) => String(row._id || row.id) === String(operation.payload.productId)); return <tr key={operation.operationId}><td>{product?.name || 'Product'}</td><td>{operation.payload.stockQuantity}</td><td>{operation.payload.description}</td><td>{money(operation.payload.amount)} RWF</td><td>{operation.status === 'pending' ? 'Pending sync' : operation.status === 'conflict' ? 'Conflict' : 'Needs attention'}</td></tr> })}</tbody></table></div></Card>}
+    {type === 'users' && <Card className="form-card compact-form"><SectionTitle title={editingId ? 'Edit user' : 'Add user'} text="Create an account with a name and phone number. New accounts use the default password 123456." /><form onSubmit={submit}><ResourceFields type={type} form={form} setForm={setForm} editing={Boolean(editingId)} /><div className="form-actions">{editingId && <button type="button" className="button secondary" onClick={() => { setEditingId(''); setForm({}) }}>Cancel edit</button>}<button className="button" disabled={saving}>{saving ? t("Saving...") : t("Save")}</button></div></form></Card>}
+    <Card className="recent"><SectionTitle title={`All ${title.toLowerCase()}`} text={type === 'expenses' ? 'Stock received and inventory purchases' : 'Live records from MongoDB'} action={type === 'expenses' && canManageAdmin(auth.user) && <button className="button" onClick={() => setAddingRow(true)}><Plus size={16} /> Add stock</button>} /><ResourceTable type={type} rows={data || []} loading={(type === 'logs' ? resource : list).loading} error={(type === 'logs' ? resource : list).error} onDelete={type === 'expenses' && !canManageAdmin(auth.user) ? undefined : remove} onEdit={type === 'expenses' ? undefined : edit} onUpdate={type === 'expenses' && canManageAdmin(auth.user) ? updateStockRow : undefined} adding={addingRow} draft={rowDraft} setDraft={setRowDraft} onSave={saveStockRow} onCancel={() => { setAddingRow(false); setRowDraft(emptyStock) }} saving={saving} currentUser={auth.user} /></Card>
   </div></AppShell>
 }
 
 function normalizeForm(type, form, editing = false) {
   if (type === 'expenses') return { description: form.description, amount: Number(form.amount || 0), paymentMethod: form.paymentMethod || 'CASH', productId: form.productId || undefined, stockQuantity: Number(form.stockQuantity || 0) }
-  const data = { username: form.username, phoneNumber: form.phoneNumber }
-  if (!editing || form.pin) data.pin = form.pin
+  const data = { name: form.name, phoneNumber: form.phoneNumber, role: form.role || 'STAFF', status: form.status || 'ACTIVE' }
+  if (editing && form.password) data.password = form.password
   return data
 }
 
 function ResourceFields({ type, form, setForm, editing = false }) {
   const set = (key, value) => setForm({ ...form, [key]: value })
   if (type === 'expenses') return <div className="form-grid"><Field label="Description"><input required value={form.description || ''} onChange={(e) => set('description', e.target.value)} /></Field><Field label="Amount"><input required type="number" min="1" value={form.amount || ''} onChange={(e) => set('amount', e.target.value)} /></Field><Field label="Payment method"><Select value={form.paymentMethod || 'CASH'} onChange={(v) => set('paymentMethod', v)} /></Field></div>
-  return <div className="form-grid"><Field label="Username"><input required value={form.username || ''} onChange={(e) => set('username', e.target.value)} /></Field><Field label="Phone number"><input required inputMode="numeric" value={form.phoneNumber || ''} onChange={(e) => set('phoneNumber', e.target.value.replace(/\D/g, '').slice(0, 10))} /></Field><Field label="PIN"><input required={!editing} inputMode="numeric" maxLength="4" pattern="[0-9]*" type="password" value={form.pin || ''} onChange={(e) => set('pin', e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field></div>
+  return <div className="form-grid"><Field label="Name"><input required value={form.name || ''} onChange={(e) => set('name', e.target.value)} /></Field><Field label="Phone number"><input required inputMode="numeric" value={form.phoneNumber || ''} onChange={(e) => set('phoneNumber', e.target.value.replace(/\D/g, '').slice(0, 10))} /></Field>{editing && <Field label="Reset password (optional)"><input type="password" value={form.password || ''} onChange={(e) => set('password', e.target.value)} /></Field>}<Field label="Role"><select required value={form.role || 'STAFF'} onChange={(e) => set('role', e.target.value)}><option value="MANAGER">Manager</option><option value="STAFF">Staff</option><option value="CASHIER">Cashier</option></select></Field><Field label="Account status"><select value={form.status || 'ACTIVE'} onChange={(e) => set('status', e.target.value)}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></Field></div>
 }
 
 function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUpdate, adding = false, draft = emptyStock, setDraft, onSave, onCancel, saving = false, currentUser }) {
@@ -1084,7 +1096,7 @@ function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUp
     : offlineSync.products
   const cols = {
     expenses: ['Date', 'User', 'Product', 'Quantity', 'What imported', 'Amount', 'Payment method'],
-    users: ['Username', 'Phone number'],
+    users: ['Name', 'Phone number', 'Role', 'Status'],
     logs: ['Action', 'Description', 'User', 'Time'],
   }[type]
   const stockTotal = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0)
@@ -1123,14 +1135,14 @@ function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUp
       <td><input required min="1" type="number" value={editDraft.amount} onChange={(e) => setEditDraft({ ...editDraft, amount: e.target.value })} /></td>
       <td><Select value={editDraft.paymentMethod} onChange={(paymentMethod) => setEditDraft({ ...editDraft, paymentMethod })} /></td>
       <td className="row-buttons"><button className="button" onClick={saveStockEdit} disabled={editing}>{editing ? t("Saving...") : t("Save")}</button><button className="button secondary" onClick={() => setEditingId('')}>{t("Cancel")}</button></td>
-    </tr> : <tr key={row._id}>{resourceCells(type, row, t).map((cell, i) => <td key={i}>{cell}</td>)}<td>{type === 'expenses' && onUpdate && isOwnRow(row, currentUser) && <button className="row-action" onClick={() => startStockEdit(row)}><Edit2 size={16} /></button>}{type === 'users' && onEdit && <button className="row-action" onClick={() => onEdit(row)}><Edit2 size={16} /></button>}{type !== 'logs' && onDelete && (type !== 'expenses' || isOwnRow(row, currentUser)) && <button className="row-action" onClick={() => confirmDelete() && onDelete(row._id)}><Trash2 size={16} /></button>}</td></tr>)}
+    </tr> : <tr key={row._id}>{resourceCells(type, row, t).map((cell, i) => <td key={i}>{cell}</td>)}<td>{type === 'expenses' && onUpdate && isOwnRow(row, currentUser) && <button className="row-action" onClick={() => startStockEdit(row)}><Edit2 size={16} /></button>}{type === 'users' && onEdit && !['ADMIN', 'OWNER'].includes(row.role) && <button className="row-action" onClick={() => onEdit(row)}><Edit2 size={16} /></button>}{type !== 'logs' && onDelete && (type !== 'expenses' || isOwnRow(row, currentUser)) && (type !== 'users' || !['ADMIN', 'OWNER'].includes(row.role)) && <button className="row-action" onClick={() => confirmDelete() && onDelete(row._id)}><Trash2 size={16} /></button>}</td></tr>)}
     {type === 'expenses' && <tr className="total-row"><td colSpan="5">Total</td><td>{money(stockTotal)} <small>RWF</small></td><td colSpan="2"></td></tr>}
   </tbody></table></div>
 }
 
 function resourceCells(type, row, t) {
   if (type === 'expenses') return [new Date(row.expenseDate || row.date || row.createdAt).toLocaleDateString(), row.createdBy?.fullName || row.createdBy?.name || '-', row.productId?.name || '-', row.stockQuantity || 0, <strong key="description">{row.description}</strong>, `${money(row.amount)} RWF`, row.paymentMethod === 'MOMO' ? t('MoMo Pay') : t('Cash')]
-  if (type === 'users') return [<strong key="name">{row.fullName || row.name}</strong>, row.phoneNumber || '-']
+  if (type === 'users') return [<strong key="name">{row.fullName || row.name}</strong>, row.phoneNumber || '-', row.role, row.status]
   return [row.action, row.description, row.user?.fullName || row.user?.name || '-', new Date(row.timestamp).toLocaleString()]
 }
 
@@ -1151,7 +1163,7 @@ function WorkspaceInfoPage({ auth, title, description }) {
     <Card className="account-panel"><div className="account-profile"><div className="account-avatar-wrap"><div className="account-avatar"><CircleUserRound size={43} /></div><span>AVATAR</span></div><div className="account-details"><div><small>FIRST NAME</small><span>{firstName || 'â€”'}</span><small>GENDER</small><span>{auth.user?.gender || 'â€”'}</span><small>PHONE</small><span>{auth.user?.phoneNumber ? `+250${auth.user.phoneNumber.replace(/^0/, '')}` : 'â€”'}</span></div><div><small>LAST NAME</small><span>{lastName || 'â€”'}</span><small>EMAIL</small><span>{auth.user?.email || 'â€”'}</span><small>ROLE</small><span>{auth.user?.role || 'â€”'}</span></div></div></div>
       <section className="account-password"><h3><LockKeyhole size={15} /> Change Password</h3><form onSubmit={(event) => event.preventDefault()}><label>CURRENT PASSWORD<input type="password" placeholder="Enter current password" autoComplete="current-password" /></label><label>NEW PASSWORD<input type="password" placeholder="Enter new password" autoComplete="new-password" /></label><label>CONFIRM NEW PASSWORD<input type="password" placeholder="Confirm new password" autoComplete="new-password" /></label><button type="submit" className="button">Update password</button></form></section>
     </Card></> : <><Card className="page-hero"><div><p className="eyebrow">WORKSPACE</p><h2>{t(title)}</h2><p>{description}</p></div></Card>
-    {<Card className="form-card workspace-info">{isSettings ? <><SectionTitle title={t("Shop settings")} text={t("Review workspace preferences.")} /><div className="settings-preferences"><label>{t("Language")}<select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="en">{t("English")}</option><option value="rw">{t("Kinyarwanda")}</option></select></label><label>{t("Appearance")}<select value={theme} onChange={(event) => setTheme(event.target.value)}><option value="light">{t("Light")}</option><option value="dark">{t("Dark")}</option></select></label><label>{t("Operating mode")}<select value={mode} onChange={(event) => setMode(event.target.value)}><option value="online">{t("Online mode")}</option><option value="offline">{t("Offline mode")}</option></select><small>{t(mode === 'offline' ? 'Offline mode uses saved data. Sales and stock imports queue for sync; other records are view-only.' : 'Online mode uses live server data and synchronizes queued offline sales and imports.')}</small></label></div><PwaInstallSetting t={t} /><dl><dt>{t("Currency")}</dt><dd>RWF</dd><dt>{t("Workspace")}</dt><dd>manageyourstock</dd></dl></> : <><SectionTitle title="Branches" text="Branch management" /><Notice>Branch management is not configured for this workspace yet.</Notice></>}</Card>}
+    {<Card className="form-card workspace-info">{isSettings ? <><SectionTitle title={t("Shop settings")} text={t("Review workspace preferences.")} /><div className="settings-preferences"><label>{t("Language")}<select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="en">{t("English")}</option><option value="rw">{t("Kinyarwanda")}</option></select></label><label>{t("Appearance")}<select value={theme} onChange={(event) => setTheme(event.target.value)}><option value="light">{t("Light")}</option><option value="dark">{t("Dark")}</option></select></label><label>{t("Operating mode")}<select value={mode} onChange={(event) => setMode(event.target.value)}><option value="online">{t("Online mode")}</option><option value="offline">{t("Offline mode")}</option></select><small>{t(mode === 'offline' ? 'Offline mode uses saved data. Sales and stock imports queue for sync; other records are view-only.' : 'Online mode uses live server data and synchronizes queued offline sales and imports.')}</small></label></div><PwaInstallSetting t={t} /><dl><dt>{t("Currency")}</dt><dd>RWF</dd><dt>{t("Workspace")}</dt><dd>manageyourstock</dd></dl></> : <></>}</Card>}
     </>}
   </div></AppShell>
 }
@@ -1214,50 +1226,6 @@ function PwaInstallSetting({ t }) {
   </section>
 }
 
-function BranchesPage({ auth }) {
-  const { t } = useContext(PreferencesContext)
-  const canManage = canManageBusiness(auth.user)
-  const [selectedId, setSelectedId] = useState('')
-  const [draft, setDraft] = useState(null)
-  const [error, setError] = useState('')
-  const [refresh, setRefresh] = useState(0)
-  const branches = useApi('/branches', { params: { refresh }, initial: [], refreshMs: liveRefreshMs })
-  const detail = useApi(selectedId ? `/branches/${selectedId}` : '/branches', { enabled: Boolean(selectedId), initial: null, params: { refresh } })
-  const selected = detail.data
-  const save = async (event) => {
-    event.preventDefault()
-    setError('')
-    try {
-      if (draft._id) await api.put(`/branches/${draft._id}`, draft)
-      else await api.post('/branches', draft)
-      setDraft(null)
-      setRefresh((value) => value + 1)
-    } catch (saveError) { setError(apiMessage(saveError)) }
-  }
-  const remove = async (branch) => {
-    if (!confirm(`Delete branch ${branch.name}?`)) return
-    try {
-      await api.delete(`/branches/${branch._id}`)
-      if (selectedId === branch._id) setSelectedId('')
-      setRefresh((value) => value + 1)
-    } catch (deleteError) { setError(apiMessage(deleteError)) }
-  }
-  const toggleStatus = async (branch) => {
-    try {
-      await api.put(`/branches/${branch._id}`, { ...branch, status: branch.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' })
-      setRefresh((value) => value + 1)
-    } catch (updateError) { setError(apiMessage(updateError)) }
-  }
-  return <AppShell title="Manage Branches" auth={auth}><div className="page-content">
-    <Card className="page-hero"><div><p className="eyebrow">{t('Workspace')}</p><h2>{t('Branch management')}</h2><p>{t('Create branches and review each branch’s stock, sales, and imports.')}</p></div>{canManage && <button className="button" onClick={() => setDraft({ name: '', code: '', address: '', phone: '', managerName: '', status: 'ACTIVE' })}><Plus size={15} /> {t('Add branch')}</button>}</Card>
-    {error && <Notice tone="error">{error}</Notice>}
-    {draft && <Card className="form-card branch-form-card"><SectionTitle title={t(draft._id ? 'Edit branch' : 'Add branch')} text={t('Branch records keep inventory and activity organized by location.')} /><form onSubmit={save}><div className="form-grid"><Field label={t('Branch name *')}><input required minLength={2} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></Field><Field label={t('Branch code')}><input value={draft.code} onChange={(event) => setDraft({ ...draft, code: event.target.value.toUpperCase() })} /></Field><Field label={t('Address')}><input value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} /></Field><Field label={t('Phone')}><input value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} /></Field><Field label={t('Branch manager')}><input value={draft.managerName} onChange={(event) => setDraft({ ...draft, managerName: event.target.value })} /></Field><Field label={t('Status')}><select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value })}><option value="ACTIVE">{t('Active')}</option><option value="INACTIVE">{t('Inactive')}</option></select></Field></div><div className="form-actions"><button type="button" className="button secondary" onClick={() => setDraft(null)}>{t('Cancel')}</button><button className="button">{t('Save branch')}</button></div></form></Card>}
-    {branches.loading && <Card className="recent">{t('Loading branches...')}</Card>}{branches.error && <Notice tone="error">{branches.error}</Notice>}
-    <div className="branch-card-grid">{(branches.data || []).map((branch) => <Card className={'branch-card' + (selectedId === branch._id ? ' selected' : '')} key={branch._id}><div className="branch-card-heading"><div><Building2 size={17} /><div><strong>{branch.name}</strong><small>{branch.code || branch.address || 'Branch'}</small></div></div><span className={'stock-badge ' + (branch.status === 'ACTIVE' ? 'active' : 'inactive')}>{branch.status}</span></div><div className="branch-metrics"><div><strong>{branch.inventory?.products || 0}</strong><span>Products</span></div><div><strong>{branch.inventory?.units || 0}</strong><span>Stock units</span></div><div><strong>{money(branch.inventory?.value || 0)} RWF</strong><span>Stock value</span></div><div><strong>{branch.inventory?.lowStock || 0}</strong><span>Low stock</span></div><div><strong>{money(branch.sales?.sales || 0)} RWF</strong><span>Sales</span></div><div><strong>{branch.sales?.count || 0}</strong><span>Sales records</span></div></div><div className="branch-card-actions"><button className="button secondary" onClick={() => setSelectedId(branch._id)}>View branch</button>{canManage && <><button className="button secondary" onClick={() => setDraft({ name: branch.name, code: branch.code || '', address: branch.address || '', phone: branch.phone || '', managerName: branch.managerName || '', status: branch.status, _id: branch._id })}>Edit</button><button className="button secondary" onClick={() => toggleStatus(branch)}>{branch.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</button><button className="row-action" aria-label="Delete branch" onClick={() => remove(branch)}><Trash2 size={15} /></button></>}</div></Card>)}</div>
-    {!branches.loading && !branches.error && !branches.data?.length && <Card className="recent">No branches found. Run the database migration to add the default branch, or add a branch.</Card>}
-    {selected && <Card className="recent branch-detail"><SectionTitle title={selected.branch.name} text={`${selected.products.length} products · ${selected.transactions.length} recent sales · ${selected.imports.length} recent imports`} /><h3>Products in this branch</h3><div className="table-wrap"><table><thead><tr><th>Product</th><th>SKU</th><th>Storage location</th><th>Quantity</th><th>Cost value</th><th>Status</th></tr></thead><tbody>{selected.products.map((product) => <tr key={product._id}><td>{product.name}</td><td>{product.sku || '—'}</td><td>{product.location}</td><td>{product.quantity} {product.unit}</td><td>{money(product.quantity * product.costPrice)} RWF</td><td>{product.quantity === 0 ? 'Out of stock' : product.quantity <= product.lowStockLevel ? 'Low stock' : product.status}</td></tr>)}{!selected.products.length && <tr><td colSpan="6">No products assigned to this branch.</td></tr>}</tbody></table></div><h3>Recent sales</h3><div className="table-wrap"><table><thead><tr><th>Date</th><th>Product</th><th>Quantity</th><th>Total</th><th>Staff</th></tr></thead><tbody>{selected.transactions.map((sale) => <tr key={sale._id}><td>{new Date(sale.transactionDate).toLocaleString()}</td><td>{sale.productId?.name || sale.serviceOrProduct}</td><td>{sale.quantity}</td><td>{money(sale.totalAmount)} RWF</td><td>{sale.staff?.fullName || sale.staff?.name || '—'}</td></tr>)}{!selected.transactions.length && <tr><td colSpan="5">No sales in this branch yet.</td></tr>}</tbody></table></div><h3>Recent imports</h3><div className="table-wrap"><table><thead><tr><th>Date</th><th>Product</th><th>Description</th><th>Quantity</th><th>Cost</th></tr></thead><tbody>{selected.imports.map((item) => <tr key={item._id}><td>{new Date(item.expenseDate || item.createdAt).toLocaleDateString()}</td><td>{item.productId?.name || 'Unlinked'}</td><td>{item.description}</td><td>{item.stockQuantity}</td><td>{money(item.amount)} RWF</td></tr>)}{!selected.imports.length && <tr><td colSpan="5">No imports in this branch yet.</td></tr>}</tbody></table></div></Card>}
-  </div></AppShell>
-}
 
 function RoleProtected({ auth, admin = false, business = false, children }) {
   if (admin && !canManageAdmin(auth.user)) return <Navigate to="/dashboard" replace />
@@ -1287,12 +1255,11 @@ function AppRoutes() {
     <Route path="/transactions" element={protect(<TransactionsPage auth={auth} />)} />
     <Route path="/sold-products" element={protect(<SoldProductsPage auth={auth} />)} />
     <Route path="/products" element={protect(<ProductsPage auth={auth} />)} />
-    <Route path="/products/new" element={protect(<RoleProtected auth={auth} business><ProductsPage auth={auth} initialAdd /></RoleProtected>)} />
+    <Route path="/products/new" element={protect(<RoleProtected auth={auth} admin><ProductsPage auth={auth} initialAdd /></RoleProtected>)} />
     <Route path="/reports" element={protect(<ReportsPage auth={auth} />)} />
     <Route path="/expenses" element={protect(<ResourcePage auth={auth} type="expenses" title="Imported stock" />)} />
     <Route path="/account" element={protect(<WorkspaceInfoPage auth={auth} title="Account Information" description="Review your user account details." />)} />
-    <Route path="/branches" element={protect(<RoleProtected auth={auth} business><BranchesPage auth={auth} /></RoleProtected>)} />
-    <Route path="/settings" element={protect(<WorkspaceInfoPage auth={auth} title="Settings" description="Review workspace preferences." />)} />
+    <Route path="/settings" element={protect(<RoleProtected auth={auth} admin><WorkspaceInfoPage auth={auth} title="Settings" description="Review workspace preferences." /></RoleProtected>)} />
     <Route path="/users" element={protect(<RoleProtected auth={auth} admin><ResourcePage auth={auth} type="users" title="Users management" /></RoleProtected>)} />
     <Route path="*" element={<Navigate to="/dashboard" replace />} />
   </Routes></PreferencesContext.Provider></OfflineSyncProvider>
