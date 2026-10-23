@@ -476,6 +476,7 @@ function TransactionTable({ rows = [], loading, error, adding = false, draft = e
 }
 
 function Dashboard({ auth }) {
+  const isAdmin = canManageAdmin(auth.user)
   const [range, setRange] = useState({ fromDate: monthStart, toDate: today })
   const [refresh, setRefresh] = useState(0)
   const updateTransaction = async (id, data) => {
@@ -486,10 +487,10 @@ function Dashboard({ auth }) {
     await api.delete(`/transactions/${id}`)
     setRefresh((value) => value + 1)
   }
-  const summary = useApi('/dashboard/summary', { params: { ...range, refresh }, initial: {}, refreshMs: liveRefreshMs })
-  const recent = useApi('/transactions', { params: { ...range, limit: 5, refresh }, initial: [], refreshMs: liveRefreshMs })
-  const stock = useApi('/expenses', { params: { ...range, refresh }, initial: [], refreshMs: liveRefreshMs })
-  const productInventory = useApi('/products', { params: { refresh }, initial: [], refreshMs: liveRefreshMs })
+  const summary = useApi('/dashboard/summary', { params: { ...range, dashboardView: isAdmin ? 'system' : 'personal', refresh }, initial: {}, refreshMs: liveRefreshMs })
+  const recent = useApi('/transactions', { params: { ...range, limit: 5, dashboard: 'true', refresh }, initial: [], refreshMs: liveRefreshMs })
+  const stock = useApi('/expenses', { params: { ...range, refresh }, initial: [], enabled: isAdmin, refreshMs: liveRefreshMs })
+  const productInventory = useApi('/products', { params: { refresh }, initial: [], enabled: isAdmin, refreshMs: liveRefreshMs })
   const data = summary.data || {}
   const amount = data.totalAmount || data.totalPaid || data.paidAmount || 0
   const cashOut = data.totalCashOut || 0
@@ -504,32 +505,34 @@ function Dashboard({ auth }) {
   const pie = [{ name: 'Cash In', value: cashIn, color: '#246bfd' }, { name: 'Remaining', value: unpaid, color: '#f3ae35' }]
 
   return <AppShell title="Dashboard" auth={auth}><div className="page-content">
-    <div className="dashboard-welcome"><div><span className="eyebrow">BUSINESS OVERVIEW</span><h2>Stock and sales at a glance</h2><p>Monitor cash flow, inventory levels, and recent activity.</p></div><button type="button" className="button secondary" onClick={() => setRefresh((value) => value + 1)} disabled={summary.loading || productInventory.loading}><RefreshCw size={15} /> Refresh dashboard</button></div>
+    <div className="dashboard-welcome"><div><span className="eyebrow">{isAdmin ? 'BUSINESS OVERVIEW' : 'PERSONAL OVERVIEW'}</span><h2>{isAdmin ? 'Stock and sales at a glance' : 'Your sales at a glance'}</h2><p>{isAdmin ? 'Monitor cash flow, inventory levels, and recent activity.' : 'Review your sales and payments received during the selected period.'}</p></div><button type="button" className="button secondary" onClick={() => setRefresh((value) => value + 1)} disabled={summary.loading || productInventory.loading}><RefreshCw size={15} /> Refresh dashboard</button></div>
     <DateControls range={range} setRange={setRange} onSearch={() => setRefresh((value) => value + 1)} />
     {summary.error && <Notice tone="error">{summary.error}</Notice>}
-    {productInventory.error && <Notice tone="error">{productInventory.error}</Notice>}
+    {isAdmin && productInventory.error && <Notice tone="error">{productInventory.error}</Notice>}
     <div className="dashboard-stat-grid">{[
       [CircleDollarSign, 'Payments received', money(amount), 'RWF', 'Customer payments during selected period', 'green'],
       [Wallet, 'Cash out', money(cashOut), 'RWF', 'Recorded expenses against sales', 'orange'],
       [CircleDollarSign, 'Net cash', money(cashIn), 'RWF', 'Payments received after cash out', 'blue'],
       [Wallet, 'Outstanding balance', money(unpaid), 'RWF', 'Remaining customer balance', 'orange'],
       [ClipboardList, 'Sales recorded', data.transactionCount || 0, '', 'During selected period', 'purple'],
-      [Package, 'Units in stock', money(inventoryUnits), '', `${activeProducts.length} active products`, 'blue'],
-      [CircleDollarSign, 'Current stock value', money(inventoryValue), 'RWF', 'Quantity multiplied by cost price', 'teal'],
-      [Package, 'Low / out of stock', lowStockProducts.length + outOfStockProducts.length, '', `${outOfStockProducts.length} out of stock`, 'orange'],
+      ...(isAdmin ? [
+        [Package, 'Units in stock', money(inventoryUnits), '', `${activeProducts.length} active products`, 'blue'],
+        [CircleDollarSign, 'Current stock value', money(inventoryValue), 'RWF', 'Quantity multiplied by cost price', 'teal'],
+        [Package, 'Low / out of stock', lowStockProducts.length + outOfStockProducts.length, '', `${outOfStockProducts.length} out of stock`, 'orange'],
+      ] : []),
     ].map(([Icon, label, value, unit, note, color]) => <Card className="stat-card dashboard-stat-card" key={label}>
       <div className={'stat-icon ' + color}><Icon size={19} /></div><p>{label}</p><h2>{value} <small>{unit}</small></h2><span className="change">{note}</span>
     </Card>)}</div>
     <div className="dashboard-grid">
-      <Card className="recent"><SectionTitle title="Recent transactions" text="Latest sales activity" link="/transactions" /><TransactionTable rows={recent.data || []} loading={recent.loading} error={recent.error} onUpdate={updateTransaction} onDelete={deleteTransaction} currentUser={auth.user} /></Card>
+      <Card className="recent"><SectionTitle title={isAdmin ? 'Recent transactions' : 'Your recent sales'} text={isAdmin ? 'Latest sales activity' : 'Products you sold during the selected period'} link="/transactions" /><TransactionTable rows={recent.data || []} loading={recent.loading} error={recent.error} onUpdate={updateTransaction} onDelete={deleteTransaction} currentUser={auth.user} /></Card>
       <Card className="payment-card">
         <div className="section-title"><div><h2>Payment summary</h2><p>Selected period</p></div></div>
         <div className="chart"><ResponsiveContainer width="100%" height={180}><PieChart><Pie data={pie} dataKey="value" innerRadius={52} outerRadius={72} paddingAngle={4} stroke="none">{pie.map((x) => <Cell key={x.name} fill={x.color} />)}</Pie><Tooltip formatter={(v) => `${money(v)} RWF`} /></PieChart></ResponsiveContainer><div className="chart-total"><strong>{money(cashIn)}</strong><span>Cash In</span></div></div>
         <div className="legend">{pie.map((x) => <div key={x.name}><i style={{ background: x.color }} /><span>{x.name}</span><strong>{money(x.value)} RWF</strong></div>)}</div>
       </Card>
     </div>
-    <div className="dashboard-grid dashboard-single"><Card className="recent"><SectionTitle title="Low stock products" text="Products at or below their alert level" link="/products" /><LowStockList items={[...outOfStockProducts, ...lowStockProducts].slice(0, 8)} /></Card></div>
-    <Card className="recent dashboard-stock"><SectionTitle title="Recent imported stock" text="Latest inventory purchases by all users" link="/expenses" /><ResourceTable type="expenses" rows={(stock.data || []).slice(0, 5)} loading={stock.loading} error={stock.error} /></Card>
+    {isAdmin && <><div className="dashboard-grid dashboard-single"><Card className="recent"><SectionTitle title="Low stock products" text="Products at or below their alert level" link="/products" /><LowStockList items={[...outOfStockProducts, ...lowStockProducts].slice(0, 8)} /></Card></div>
+    <Card className="recent dashboard-stock"><SectionTitle title="Recent imported stock" text="Latest inventory purchases by all users" link="/expenses" /><ResourceTable type="expenses" rows={(stock.data || []).slice(0, 5)} loading={stock.loading} error={stock.error} /></Card></>}
     <Card className="quick"><div><h2>Quick actions</h2><p>Work faster</p></div><NavLink className="quick-action" to="/transactions/new"><Plus /> New transaction</NavLink>{canManageAdmin(auth.user) && <NavLink className="quick-action" to="/products/new"><Plus /> New product</NavLink>}<NavLink className="quick-action muted" to="/reports"><BarChart3 /> View reports</NavLink></Card>
   </div></AppShell>
 }
