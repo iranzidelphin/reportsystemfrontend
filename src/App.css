@@ -196,6 +196,10 @@ html[data-theme="dark"] .global-search kbd{background:#172336;border-color:#3544
 html[data-theme="dark"] .product-breadcrumb{color:#aebbd0}
 html[data-theme="dark"] .product-breadcrumb strong{color:#e1e9f4}
 html[data-theme="dark"] .product-top-actions>span,html[data-theme="dark"] .product-top-actions .user-name span{color:#9aa9bd}
+.sale-product-results button:disabled{cursor:not-allowed;background:#f8fafc;color:#8b5960}
+.sale-product-results button:disabled strong,.sale-product-results button:disabled span{color:#8b5960}
+html[data-theme="dark"] .sale-product-results button:disabled{background:#1a2536;color:#d99aa2}
+html[data-theme="dark"] .sale-product-results button:disabled strong,html[data-theme="dark"] .sale-product-results button:disabled span{color:#d99aa2}
 .pwa-install-help{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;flex:1 0 100%;padding:12px;border:1px solid #dce3ec;border-radius:6px;background:#fff}.pwa-install-help p{color:#536176;font-size:11px;line-height:1.6}.pwa-install-help .button{height:32px}
 @media(max-width:560px){.pwa-install-setting{align-items:stretch;flex-direction:column}.pwa-install-setting>.button{width:100%}.pwa-install-help{grid-template-columns:1fr}.pwa-install-help .button{width:100%}}
 html[data-theme="dark"] .pwa-install-setting{background:#111b2b;border-color:#29374d}html[data-theme="dark"] .pwa-install-copy strong{color:#e1e9f4}html[data-theme="dark"] .pwa-install-copy span{color:#aebbd0}html[data-theme="dark"] .pwa-install-help{background:#0d1726;border-color:#35445b}html[data-theme="dark"] .pwa-install-help p{color:#dce5f3}
