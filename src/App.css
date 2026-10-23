@@ -183,6 +183,19 @@ html[data-theme="dark"] td strong,html[data-theme="dark"] .legend strong,html[da
 
 .pwa-install-setting{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:4px 0 18px;padding:15px;border:1px solid #dce3ec;border-radius:7px;background:#f8fafc}
 .pwa-install-copy{display:grid;gap:5px;min-width:0}.pwa-install-copy strong{color:#26364d;font-size:12px}.pwa-install-copy span{color:#718096;font-size:11px;line-height:1.5}.pwa-install-setting>.button{flex:0 0 auto;min-height:38px}
+
+.header-theme-toggle{width:32px;height:32px;flex:0 0 32px;display:grid;place-items:center;border-radius:7px;cursor:pointer}
+.header-theme-toggle:hover{background:#edf2f8}
+.global-search-submit{display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;padding:0;border:0;background:transparent;color:inherit;cursor:pointer}
+.global-search-submit:hover{color:#246bfd}
+.global-search-submit:focus-visible,.header-theme-toggle:focus-visible{outline:2px solid #246bfd;outline-offset:2px}
+html[data-theme="dark"] .header-theme-toggle{color:#cbd5e1}
+html[data-theme="dark"] .header-theme-toggle:hover{background:#1a2940}
+html[data-theme="dark"] .global-search,html[data-theme="dark"] .sale-header-title{color:#cbd5e1}
+html[data-theme="dark"] .global-search kbd{background:#172336;border-color:#35445b;color:#b5c1d2}
+html[data-theme="dark"] .product-breadcrumb{color:#aebbd0}
+html[data-theme="dark"] .product-breadcrumb strong{color:#e1e9f4}
+html[data-theme="dark"] .product-top-actions>span,html[data-theme="dark"] .product-top-actions .user-name span{color:#9aa9bd}
 .pwa-install-help{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;flex:1 0 100%;padding:12px;border:1px solid #dce3ec;border-radius:6px;background:#fff}.pwa-install-help p{color:#536176;font-size:11px;line-height:1.6}.pwa-install-help .button{height:32px}
 @media(max-width:560px){.pwa-install-setting{align-items:stretch;flex-direction:column}.pwa-install-setting>.button{width:100%}.pwa-install-help{grid-template-columns:1fr}.pwa-install-help .button{width:100%}}
 html[data-theme="dark"] .pwa-install-setting{background:#111b2b;border-color:#29374d}html[data-theme="dark"] .pwa-install-copy strong{color:#e1e9f4}html[data-theme="dark"] .pwa-install-copy span{color:#aebbd0}html[data-theme="dark"] .pwa-install-help{background:#0d1726;border-color:#35445b}html[data-theme="dark"] .pwa-install-help p{color:#dce5f3}
