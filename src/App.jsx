@@ -353,7 +353,7 @@ function AppShell({ children, title, auth, productHeader = false, saleHeader = f
         {accountOpen && <div className="side-subnav">
           <NavLink to="/account" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><CircleUserRound size={16} /><span>{t('Account Information')}</span></NavLink>
           {canManageAdmin(auth.user) && <NavLink to="/users" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Users size={16} /><span>{t('Users')}</span></NavLink>}
-          {canManageAdmin(auth.user) && <NavLink to="/settings" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Settings size={16} /><span>{t('Settings')}</span></NavLink>}
+          <NavLink to="/settings" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Settings size={16} /><span>{t('Settings')}</span></NavLink>
         </div>}
       </nav>
       <button className="logout" onClick={async () => { if (await auth.logout()) navigate('/login') }}><LogOut size={18} /> {t('Logout')}</button>
@@ -1293,7 +1293,7 @@ function AppRoutes() {
     <Route path="/reports" element={protect(<ReportsPage auth={auth} />)} />
     <Route path="/expenses" element={protect(<ResourcePage auth={auth} type="expenses" title="Imported stock" />)} />
     <Route path="/account" element={protect(<WorkspaceInfoPage auth={auth} title="Account Information" description="Review your user account details." />)} />
-    <Route path="/settings" element={protect(<RoleProtected auth={auth} admin><WorkspaceInfoPage auth={auth} title="Settings" description="Review workspace preferences." /></RoleProtected>)} />
+    <Route path="/settings" element={protect(<WorkspaceInfoPage auth={auth} title="Settings" description="Review workspace preferences." />)} />
     <Route path="/users" element={protect(<RoleProtected auth={auth} admin><ResourcePage auth={auth} type="users" title="Users management" /></RoleProtected>)} />
     <Route path="*" element={<Navigate to="/dashboard" replace />} />
   </Routes></PreferencesContext.Provider></OfflineSyncProvider>
