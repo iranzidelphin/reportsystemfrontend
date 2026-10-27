@@ -999,13 +999,12 @@ function ResourcePage({ auth, type, title }) {
   const submit = async (event) => {
     event.preventDefault(); setSaving(true); setMessage(''); setError('')
     try {
-      let response
-      if (editingId) response = await api.put(`${endpoints[type]}/${editingId}`, normalizeForm(type, form, true))
-      else response = await api.post(endpoints[type], normalizeForm(type, form))
+      if (editingId) await api.put(`${endpoints[type]}/${editingId}`, normalizeForm(type, form, true))
+      else await api.post(endpoints[type], normalizeForm(type, form))
       setForm({})
       setEditingId('')
       setRefresh((x) => x + 1)
-      setMessage(editingId ? 'Saved successfully.' : type === 'users' ? `Created successfully. Default password: ${response.data.data.defaultPassword}` : 'Created successfully.')
+      setMessage(editingId ? 'Saved successfully.' : 'Created successfully.')
     } catch (error) {
       setError(apiMessage(error))
     } finally {
@@ -1077,22 +1076,22 @@ function ResourcePage({ auth, type, title }) {
     {type === 'expenses' && <DateControls range={range} setRange={setRange} compact onSearch={() => setRefresh((value) => value + 1)} />}
     {message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
     {type === 'expenses' && canManageAdmin(auth.user) && sync.snapshot.operations.some((operation) => operation.kind === 'import') && <Card className="recent offline-import-queue"><SectionTitle title="Offline imports" text="Queued imports are kept on this device until confirmed by the server." /><div className="table-wrap"><table><thead><tr><th>Product</th><th>Quantity</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead><tbody>{sync.snapshot.operations.filter((operation) => operation.kind === 'import').map((operation) => { const product = sync.products.find((row) => String(row._id || row.id) === String(operation.payload.productId)); return <tr key={operation.operationId}><td>{product?.name || 'Product'}</td><td>{operation.payload.stockQuantity}</td><td>{operation.payload.description}</td><td>{money(operation.payload.amount)} RWF</td><td>{operation.status === 'pending' ? 'Pending sync' : operation.status === 'conflict' ? 'Conflict' : 'Needs attention'}</td></tr> })}</tbody></table></div></Card>}
-    {type === 'users' && <Card className="form-card compact-form"><SectionTitle title={editingId ? 'Edit user' : 'Add user'} text="Create an account with a name and phone number. New accounts use the default password 123456." /><form onSubmit={submit}><ResourceFields type={type} form={form} setForm={setForm} editing={Boolean(editingId)} /><div className="form-actions">{editingId && <button type="button" className="button secondary" onClick={() => { setEditingId(''); setForm({}) }}>Cancel edit</button>}<button className="button" disabled={saving}>{saving ? t("Saving...") : t("Save")}</button></div></form></Card>}
+    {type === 'users' && <Card className="form-card compact-form"><SectionTitle title={editingId ? 'Edit user' : 'Add user'} text="Create an account with a name, phone number, and password." /><form onSubmit={submit}><ResourceFields type={type} form={form} setForm={setForm} editing={Boolean(editingId)} /><div className="form-actions">{editingId && <button type="button" className="button secondary" onClick={() => { setEditingId(''); setForm({}) }}>Cancel edit</button>}<button className="button" disabled={saving}>{saving ? t("Saving...") : t("Save")}</button></div></form></Card>}
     <Card className="recent"><SectionTitle title={`All ${title.toLowerCase()}`} text={type === 'expenses' ? 'Stock received and inventory purchases' : 'Live records from MongoDB'} action={type === 'expenses' && canManageAdmin(auth.user) && <button className="button" onClick={() => setAddingRow(true)}><Plus size={16} /> Add stock</button>} /><ResourceTable type={type} rows={data || []} loading={(type === 'logs' ? resource : list).loading} error={(type === 'logs' ? resource : list).error} onDelete={type === 'expenses' && !canManageAdmin(auth.user) ? undefined : remove} onEdit={type === 'expenses' ? undefined : edit} onUpdate={type === 'expenses' && canManageAdmin(auth.user) ? updateStockRow : undefined} adding={addingRow} draft={rowDraft} setDraft={setRowDraft} onSave={saveStockRow} onCancel={() => { setAddingRow(false); setRowDraft(emptyStock) }} saving={saving} currentUser={auth.user} /></Card>
   </div></AppShell>
 }
 
-function normalizeForm(type, form, editing = false) {
+function normalizeForm(type, form) {
   if (type === 'expenses') return { description: form.description, amount: Number(form.amount || 0), paymentMethod: form.paymentMethod || 'CASH', productId: form.productId || undefined, stockQuantity: Number(form.stockQuantity || 0) }
   const data = { name: form.name, phoneNumber: form.phoneNumber, role: form.role || 'STAFF', status: form.status || 'ACTIVE' }
-  if (editing && form.password) data.password = form.password
+  if (form.password) data.password = form.password
   return data
 }
 
 function ResourceFields({ type, form, setForm, editing = false }) {
   const set = (key, value) => setForm({ ...form, [key]: value })
   if (type === 'expenses') return <div className="form-grid"><Field label="Description"><input required value={form.description || ''} onChange={(e) => set('description', e.target.value)} /></Field><Field label="Amount"><input required type="number" min="1" value={form.amount || ''} onChange={(e) => set('amount', e.target.value)} /></Field><Field label="Payment method"><Select value={form.paymentMethod || 'CASH'} onChange={(v) => set('paymentMethod', v)} /></Field></div>
-  return <div className="form-grid"><Field label="Name"><input required value={form.name || ''} onChange={(e) => set('name', e.target.value)} /></Field><Field label="Phone number"><input required inputMode="numeric" value={form.phoneNumber || ''} onChange={(e) => set('phoneNumber', e.target.value.replace(/\D/g, '').slice(0, 10))} /></Field>{editing && <Field label="Reset password (optional)"><input type="password" value={form.password || ''} onChange={(e) => set('password', e.target.value)} /></Field>}<Field label="Role"><select required value={form.role || 'STAFF'} onChange={(e) => set('role', e.target.value)}><option value="MANAGER">Manager</option><option value="STAFF">Staff</option><option value="CASHIER">Cashier</option></select></Field><Field label="Account status"><select value={form.status || 'ACTIVE'} onChange={(e) => set('status', e.target.value)}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></Field></div>
+  return <div className="form-grid"><Field label="Name"><input required value={form.name || ''} onChange={(e) => set('name', e.target.value)} /></Field><Field label="Phone number"><input required inputMode="numeric" value={form.phoneNumber || ''} onChange={(e) => set('phoneNumber', e.target.value.replace(/\D/g, '').slice(0, 10))} /></Field><Field label={editing ? 'Reset password (optional)' : 'Password'}><input type="password" required={!editing} minLength="8" maxLength="128" value={form.password || ''} onChange={(e) => set('password', e.target.value)} /></Field><Field label="Role"><select required value={form.role || 'STAFF'} onChange={(e) => set('role', e.target.value)}><option value="MANAGER">Manager</option><option value="STAFF">Staff</option><option value="CASHIER">Cashier</option></select></Field><Field label="Account status"><select value={form.status || 'ACTIVE'} onChange={(e) => set('status', e.target.value)}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></Field></div>
 }
 
 function ResourceTable({ type, rows = [], loading, error, onDelete, onEdit, onUpdate, adding = false, draft = emptyStock, setDraft, onSave, onCancel, saving = false, currentUser }) {

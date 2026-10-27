@@ -2,7 +2,9 @@ import axios from 'axios'
 
 const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim()
-  || (isLocalHost ? 'http://localhost:5000/api' : 'https://reportsystembackend.onrender.com/api')
+  // Vite proxies this relative route locally, so the browser does not need to
+  // make a separate cross-origin request to localhost:5000.
+  || (isLocalHost ? '/api' : 'https://reportsystembackend.onrender.com/api')
 
 const normalizedApiUrl = configuredApiUrl.replace(/\/+$/, '')
 export const API_BASE_URL = normalizedApiUrl.endsWith('/api')

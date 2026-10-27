@@ -47,7 +47,9 @@ export function OfflineSyncProvider({ user, reauthenticate, children }) {
       }
       setNeedsOnlineAuth(false)
       const result = await syncQueuedOperations(userId)
-      if (result.status === 'retry') {
+      if (result.status === 'needs-auth') {
+        setNeedsOnlineAuth(true)
+      } else if (result.status === 'retry') {
         retryRef.current = window.setTimeout(() => { syncNow() }, Math.max(1500, result.delay))
       } else if (result.status === 'error') {
         setSyncError(result.error?.response?.data?.message || result.error?.message || 'Sync failed. Your offline records are still saved.')
@@ -174,7 +176,7 @@ export function OfflineSyncStatus({ t = (value) => value, mode = 'online' }) {
       </button>
       {(sync.snapshot.pending || sync.snapshot.conflicts || sync.snapshot.errors) > 0 && <button type="button" className="sync-issues-toggle" onClick={() => setExpanded((value) => !value)}>{expanded ? t('Hide queue') : t('View queue')}</button>}
     </div>
-    {sync.needsOnlineAuth && <form className="sync-reauth-form" onSubmit={(event) => { event.preventDefault(); sync.syncNow(pin).then((result) => { if (result.status !== 'needs-auth') setPin('') }) }}><label>{t('Enter your PIN to sign in and sync')}<input type="password" inputMode="numeric" maxLength="4" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} /></label><button type="submit" className="button" disabled={pin.length !== 4 || sync.syncing}>{t('Sign in and sync')}</button></form>}
+    {sync.needsOnlineAuth && <form className="sync-reauth-form" onSubmit={(event) => { event.preventDefault(); sync.syncNow(pin).then((result) => { if (result.status !== 'needs-auth') setPin('') }) }}><label>{t('Enter your password to sign in and sync')}<input type="password" autoComplete="current-password" maxLength="128" value={pin} onChange={(event) => setPin(event.target.value.slice(0, 128))} /></label><button type="submit" className="button" disabled={!pin || sync.syncing}>{t('Sign in and sync')}</button></form>}
     {sync.syncError && <p className="sync-message">{sync.syncError}</p>}
     {expanded && <div className="offline-sync-issues">{sync.snapshot.operations.map((operation) => <div className="offline-sync-issue" key={operation.operationId}>
       <span><strong>{t(operation.kind === 'sale' ? 'Sale' : 'Stock import')}</strong> · {operation.status === 'pending' ? t('Waiting to sync') : operation.lastError || t('Needs attention')}</span>

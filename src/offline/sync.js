@@ -88,6 +88,7 @@ export async function syncQueuedOperations(userId) {
       try {
         ;({ data: response } = await api.post('/sync/batch', { deviceId: device, operations: operations.map(({ userId: _userId, status: _status, createdAt: _createdAt, retryCount: _retryCount, lastError: _lastError, ...operation }) => operation) }))
       } catch (error) {
+        if (error.response?.status === 401) return { status: 'needs-auth', error }
         if (error.response?.status === 429 || !error.response || error.response.status >= 500) {
           const state = await offlineDb.meta.get('syncRetry')
           const failures = Number(state?.failures || 0) + 1
@@ -127,4 +128,3 @@ export async function syncQueuedOperations(userId) {
     await releaseLock(owner)
   }
 }
-
