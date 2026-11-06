@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api from '../services/api'
 import { discardOperation, offlineDb } from './db'
-import { cacheProductCatalog, queueOperation, readCachedProducts, readSyncSnapshot, syncQueuedOperations } from './sync'
+import { cacheProductCatalog, queueOperation, readCachedProducts, readSyncSnapshot, refreshOfflineDatasets, syncQueuedOperations } from './sync'
 import { OfflineSyncContext, useOfflineSync } from './OfflineSyncContext'
 
 function randomReconnectDelay() {
@@ -54,6 +54,7 @@ export function OfflineSyncProvider({ user, reauthenticate, children }) {
       } else if (result.status === 'error') {
         setSyncError(result.error?.response?.data?.message || result.error?.message || 'Sync failed. Your offline records are still saved.')
       } else if (result.status === 'complete') {
+        await refreshOfflineDatasets(user).catch(() => {})
         const left = await offlineDb.operations.where('userId').equals(String(userId)).and((operation) => operation.status === 'pending').count()
         if (left) retryRef.current = window.setTimeout(() => { syncNow() }, 1500 + Math.floor(Math.random() * 1500))
       }
@@ -67,7 +68,7 @@ export function OfflineSyncProvider({ user, reauthenticate, children }) {
       setSyncing(false)
       await refreshSnapshot()
     }
-  }, [userId, reauthenticate, refreshSnapshot])
+  }, [userId, user, reauthenticate, refreshSnapshot])
 
   const enqueue = useCallback(async (operation) => {
     if (!userId) throw new Error('Sign in before saving offline records.')
@@ -107,10 +108,12 @@ export function OfflineSyncProvider({ user, reauthenticate, children }) {
         .then(({ data }) => cacheProductCatalog(userId, data.data || []))
         .then((rows) => alive && setProducts(rows))
         .catch(() => {})
+      refreshOfflineDatasets(user).catch(() => {})
     }
     const timer = window.setTimeout(() => syncNow(), token ? 400 + Math.floor(Math.random() * 1600) : randomReconnectDelay())
     refreshRef.current = timer
     const refreshTimer = window.setInterval(() => refreshSnapshot(), 2000)
+    const datasetTimer = window.setInterval(() => refreshOfflineDatasets(user).catch(() => {}), 5 * 60 * 1000)
     const queuedRetry = window.setInterval(async () => {
       if (!navigator.onLine) return
       const pending = await offlineDb.operations.where('userId').equals(String(userId)).and((operation) => operation.status === 'pending').count()
@@ -122,8 +125,9 @@ export function OfflineSyncProvider({ user, reauthenticate, children }) {
       window.clearTimeout(refreshRef.current)
       window.clearInterval(refreshTimer)
       window.clearInterval(queuedRetry)
+      window.clearInterval(datasetTimer)
     }
-  }, [userId, refreshSnapshot, syncNow])
+  }, [userId, user, refreshSnapshot, syncNow])
 
   useEffect(() => {
     const handleOnline = () => {
@@ -135,6 +139,7 @@ export function OfflineSyncProvider({ user, reauthenticate, children }) {
           .then(({ data }) => cacheProductCatalog(userId, data.data || []))
           .then((rows) => setProducts(rows))
           .catch(() => {})
+        refreshOfflineDatasets(user).catch(() => {})
       }
     }
     const handleOffline = () => { setOnline(false); window.clearTimeout(refreshRef.current) }
@@ -145,7 +150,7 @@ export function OfflineSyncProvider({ user, reauthenticate, children }) {
       window.removeEventListener('offline', handleOffline)
       window.clearTimeout(retryRef.current)
     }
-  }, [syncNow, userId])
+  }, [syncNow, userId, user])
 
   const value = useMemo(() => ({
     userId, snapshot, products, online, syncing, syncError, storagePersisted, needsOnlineAuth,
@@ -163,13 +168,14 @@ export function OfflineSyncStatus({ t = (value) => value, mode = 'online' }) {
   const timestamp = sync.snapshot.lastSyncAt
     ? new Date(sync.snapshot.lastSyncAt).toLocaleString()
     : t('Not synced yet')
+  const stale = sync.snapshot.lastSyncAt && Date.now() - new Date(sync.snapshot.lastSyncAt).getTime() > 24 * 60 * 60 * 1000
 
   return <section className="offline-sync-status" aria-live="polite">
     <div className="offline-sync-summary">
       <span className={mode === 'offline' ? 'sync-connection offline' : sync.online ? 'sync-connection online' : 'sync-connection offline'}>{mode === 'offline' ? t('Offline') : sync.online ? t('Online') : t('Offline')}</span>
-      <span>{t('Last sync')}: {timestamp}</span>
-      <span>{sync.snapshot.pending} {t('pending')}</span>
-      <span className={sync.snapshot.conflicts ? 'sync-conflicts' : ''}>{sync.snapshot.conflicts} {t('conflicts')}</span>
+      <span>{mode === 'offline' || !sync.online ? `${t('Offline')} - ${t('saved data from')} ${timestamp}` : `${t('Last sync')}: ${timestamp}`}{stale ? ` ⚠ ${t('May be out of date')}` : ''}</span>
+      <button type="button" className="sync-count" onClick={() => setExpanded(true)}>{sync.snapshot.pending} {t('pending')}</button>
+      <button type="button" className={sync.snapshot.conflicts ? 'sync-conflicts sync-count' : 'sync-count'} onClick={() => setExpanded(true)}>{sync.snapshot.conflicts} {t('conflicts')}</button>
       {!sync.storagePersisted && <span title={t('The browser may clear locally stored records')}>{t('Local storage not persistent')}</span>}
       <button type="button" className="button secondary" onClick={() => sync.syncNow()} disabled={!sync.online || sync.syncing || !sync.snapshot.pending}>
         {sync.syncing ? t('Syncing…') : t('Sync now')}
@@ -180,7 +186,7 @@ export function OfflineSyncStatus({ t = (value) => value, mode = 'online' }) {
     {sync.syncError && <p className="sync-message">{sync.syncError}</p>}
     {expanded && <div className="offline-sync-issues">{sync.snapshot.operations.map((operation) => <div className="offline-sync-issue" key={operation.operationId}>
       <span><strong>{t(operation.kind === 'sale' ? 'Sale' : 'Stock import')}</strong> · {operation.status === 'pending' ? t('Waiting to sync') : operation.lastError || t('Needs attention')}</span>
-      <div>{operation.status === 'error' && <button type="button" onClick={() => sync.retry(operation.operationId)}>{t('Retry')}</button>}{operation.status !== 'pending' && <button type="button" onClick={() => sync.discard(operation.operationId)}>{t('Discard')}</button>}</div>
+      <div><button type="button" onClick={() => sync.retry(operation.operationId)}>{t('Retry')}</button><button type="button" onClick={() => { if (window.confirm(t('Discarding this record permanently loses it. Continue?'))) sync.discard(operation.operationId) }}>{t('Discard')}</button></div>
     </div>)}</div>}
   </section>
 }

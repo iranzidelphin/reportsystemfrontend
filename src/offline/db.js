@@ -1,6 +1,9 @@
 import Dexie from 'dexie'
 
 export const SALES_HISTORY_DAYS = 90
+export const MAX_PIN_ATTEMPTS = 5
+export const OFFLINE_LOGIN_MAX_DAYS = 7
+export const AUTO_LOCK_MINUTES = 5
 const HISTORY_RETENTION_MS = SALES_HISTORY_DAYS * 24 * 60 * 60 * 1000
 
 export const offlineDb = new Dexie('manageyourstock_offline')
@@ -18,6 +21,13 @@ offlineDb.version(2).stores({
   apiCache: '&cacheKey, userId, path, cachedAt',
 })
 offlineDb.version(3).stores({
+  products: '&[userId+id], userId, name, sku',
+  operations: '&operationId, userId, status, createdAt, [userId+status+createdAt]',
+  salesHistory: '&id, userId, operationId, date, status',
+  meta: '&key',
+  apiCache: '&cacheKey, userId, path, cachedAt',
+})
+offlineDb.version(4).stores({
   products: '&[userId+id], userId, name, sku',
   operations: '&operationId, userId, status, createdAt, [userId+status+createdAt]',
   salesHistory: '&id, userId, operationId, date, status',
@@ -43,8 +53,9 @@ export async function rememberOfflineAccount(user, phoneNumber, pin) {
     phoneNumber,
     salt: bytesToBase64(salt),
     verifier: bytesToBase64(verifier),
+    lastOnlineAuthAt: Date.now(),
   })
-  await offlineDb.meta.put({ key: 'pinAttempts', failures: 0, lockedUntil: 0 })
+  await offlineDb.meta.put({ key: 'pinAttempts', failures: 0, totalFailures: 0, lockedUntil: 0 })
 }
 
 export const getOfflineAccount = () => offlineDb.meta.get('offlineAccount')
@@ -52,19 +63,23 @@ export const getOfflineAccount = () => offlineDb.meta.get('offlineAccount')
 export async function verifyOfflinePin(pin) {
   const account = await getOfflineAccount()
   if (!account || !pin) return null
+  if (Date.now() - Number(account.lastOnlineAuthAt || 0) > OFFLINE_LOGIN_MAX_DAYS * 86400000) return null
   const attempts = await offlineDb.meta.get('pinAttempts')
-  if (attempts?.lockedUntil > Date.now()) return null
+  if (attempts?.lockedUntil > Date.now() || Number(attempts?.totalFailures || 0) >= 10) return null
   const result = await pinDigest(pin, base64ToBytes(account.salt))
   const candidate = new Uint8Array(result)
   const expected = base64ToBytes(account.verifier)
   let difference = candidate.length ^ expected.length
   for (let index = 0; index < Math.min(candidate.length, expected.length); index += 1) difference |= candidate[index] ^ expected[index]
   if (difference === 0) {
-    await offlineDb.meta.put({ key: 'pinAttempts', failures: 0, lockedUntil: 0 })
+    await offlineDb.meta.put({ key: 'pinAttempts', failures: 0, totalFailures: 0, lockedUntil: 0 })
     return account
   }
+  const totalFailures = Number(attempts?.totalFailures || 0) + 1
   const failures = Number(attempts?.failures || 0) + 1
-  await offlineDb.meta.put({ key: 'pinAttempts', failures: failures >= 5 ? 0 : failures, lockedUntil: failures >= 5 ? Date.now() + 60 * 1000 : 0 })
+  const delays = [30000, 60000, 300000, 900000]
+  const lockNumber = Math.floor(totalFailures / MAX_PIN_ATTEMPTS)
+  await offlineDb.meta.put({ key: 'pinAttempts', failures: failures >= MAX_PIN_ATTEMPTS ? 0 : failures, totalFailures, lockedUntil: failures >= MAX_PIN_ATTEMPTS ? Date.now() + delays[Math.min(lockNumber - 1, delays.length - 1)] : 0 })
   return null
 }
 
@@ -272,7 +287,28 @@ export async function cacheApiData(userId, path, params, data, meta) {
 export async function getCachedApiData(userId, path, params) {
   if (!userId) return null
   const cacheKey = `${String(userId)}:${path}:${JSON.stringify(params || {})}`
-  return offlineDb.apiCache.get(cacheKey)
+  const exact = await offlineDb.apiCache.get(cacheKey)
+  if (exact) return exact
+  const matches = await offlineDb.apiCache.filter((row) => row.userId === String(userId) && row.path === path).toArray()
+  return matches.sort((a, b) => b.cachedAt - a.cachedAt)[0] || null
+}
+
+// Shared read-through helper for screen loaders. The key is deliberately caller-owned
+// so cached response shapes remain exactly the same as their API counterparts.
+export async function loadWithCache(key, fetchFn) {
+  const cacheKey = `load:${key}`
+  if (!navigator.onLine) return (await offlineDb.apiCache.get(cacheKey))?.data
+  try {
+    const data = await fetchFn()
+    await offlineDb.apiCache.put({ cacheKey, userId: String(key).split(':')[0], path: 'load', data, cachedAt: Date.now() })
+    return data
+  } catch (error) {
+    if (!error.response) {
+      const cached = await offlineDb.apiCache.get(cacheKey)
+      if (cached) return cached.data
+    }
+    throw error
+  }
 }
 
 export async function localSyncSnapshot(userId) {

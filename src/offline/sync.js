@@ -1,5 +1,5 @@
 import api from '../services/api'
-import { applyOperationResult, enqueueOperation, getCachedProducts, localSyncSnapshot, offlineDb, rememberProducts } from './db'
+import { applyOperationResult, cacheApiData, cacheSalesHistory, enqueueOperation, getCachedProducts, localSyncSnapshot, offlineDb, rememberProducts } from './db'
 
 export const SYNC_BATCH_SIZE = 30
 const MAX_BATCHES_PER_RUN = 5
@@ -64,6 +64,28 @@ export async function readCachedProducts(userId) {
 
 export async function readSyncSnapshot(userId) {
   return localSyncSnapshot(userId)
+}
+
+// Screen data is always read from Dexie when unavailable; this keeps the saved copy
+// current without changing the server response contracts.
+export async function refreshOfflineDatasets(user) {
+  if (!navigator.onLine || !sessionStorage.getItem('shop_report_token') || !user) return
+  const userId = String(user._id || user.id)
+  const isAdmin = ['ADMIN', 'OWNER'].includes(user.role)
+  const requests = [
+    ['/products', {}, async (data) => rememberProducts(userId, data)],
+    ['/products/options', {}, null],
+    ['/transactions', { limit: 1000 }, async (data) => cacheSalesHistory(userId, data)],
+    ['/expenses', {}, null],
+    ...(isAdmin ? [['/users', {}, async (data) => data.map(({ _id, id, name, fullName }) => ({ _id: _id || id, name: fullName || name }))]] : []),
+  ]
+  await Promise.all(requests.map(async ([path, params, save]) => {
+    const { data: response } = await api.get(path, { params })
+    const data = response.data || []
+    await cacheApiData(userId, path, params, data, response.meta)
+    if (save) await save(data)
+    await offlineDb.meta.put({ key: `syncedAt:${path}`, value: new Date().toISOString() })
+  }))
 }
 
 export async function syncQueuedOperations(userId) {

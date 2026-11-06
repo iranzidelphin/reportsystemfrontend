@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import api, { API_BASE_URL } from './services/api'
-import { clearPrivateData, getOfflineAccount, rememberOfflineAccount, verifyOfflinePin, offlineDb, cacheSalesHistory, cacheApiData, getCachedApiData } from './offline/db'
+import { AUTO_LOCK_MINUTES, clearPrivateData, getOfflineAccount, rememberOfflineAccount, verifyOfflinePin, offlineDb, cacheSalesHistory, cacheApiData, getCachedApiData, loadWithCache } from './offline/db'
 import { OfflineSyncProvider, OfflineSyncStatus } from './offline/OfflineSyncProvider'
 import { useOfflineSync } from './offline/OfflineSyncContext'
 import './App.css'
@@ -286,11 +286,14 @@ function useApi(path, options = {}) {
     if (mode === 'offline' || !navigator.onLine) {
       readCache('No saved copy is available on this device. Connect to the internet to load this page.').catch(() => {})
     } else {
-      api.get(path, { params: requestParams })
-        .then(({ data }) => {
+      loadWithCache(`${userId}:${path}:${JSON.stringify(requestParams || {})}`, async () => {
+        const { data } = await api.get(path, { params: requestParams })
+        await cacheApiData(userId, path, requestParams, data.data, data.meta)
+        return { data: data.data, meta: data.meta }
+      })
+        .then((payload) => {
           if (!alive) return
-          setState({ data: data.data, meta: data.meta, loading: false, error: '' })
-          cacheApiData(userId, path, requestParams, data.data, data.meta).catch(() => {})
+          setState({ data: payload.data, meta: payload.meta, loading: false, error: '' })
         })
         .catch((error) => readCache(apiMessage(error)).catch(() => alive && setState({ data: initialRef.current, loading: false, error: apiMessage(error) })))
     }
@@ -426,6 +429,20 @@ function MobileRecordList({ items = [], loading, error, empty, getTitle, getSubt
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
+
+  useEffect(() => {
+    if (!offline || !user) return undefined
+    let timer
+    const lock = () => {
+      getOfflineAccount().then((account) => {
+        setUser(null); setOffline(false); setOfflinePin(''); setLockedAccount(account || null)
+      }).catch(() => {})
+    }
+    const reset = () => { window.clearTimeout(timer); timer = window.setTimeout(lock, AUTO_LOCK_MINUTES * 60 * 1000) }
+    ;['pointerdown', 'keydown', 'touchstart'].forEach((event) => window.addEventListener(event, reset))
+    reset()
+    return () => { window.clearTimeout(timer); ['pointerdown', 'keydown', 'touchstart'].forEach((event) => window.removeEventListener(event, reset)) }
+  }, [offline, user])
   const grouped = groupBy ? items.reduce((result, item) => { const key = groupBy(item); (result[key] ||= []).push(item); return result }, {}) : { '': items }
   return <div className="mobile-record-list">
     {loading && <p className="mobile-record-state">{t('Loading records...')}</p>}
