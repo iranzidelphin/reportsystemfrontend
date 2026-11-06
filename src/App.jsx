@@ -332,6 +332,19 @@ function Card({ children, className = '' }) {
   return <section className={'card ' + className}>{children}</section>
 }
 
+function RouteSeo() {
+  const location = useLocation()
+  const isPublicRoute = location.pathname === '/' || location.pathname === '/login'
+
+  useEffect(() => {
+    const robots = document.querySelector('meta[name="robots"]')
+    if (robots) robots.setAttribute('content', isPublicRoute ? 'index, follow' : 'noindex, nofollow')
+    document.title = isPublicRoute ? 'Manage Your Stock | Stock Manager & StockManagement' : 'Manage Your Stock'
+  }, [isPublicRoute])
+
+  return null
+}
+
 function Drawer({ isOpen, onClose, currentRoute, onNavigate, onLogout, t }) {
   const drawerRef = useRef(null)
   const touchStartX = useRef(null)
@@ -745,7 +758,7 @@ function Login({ auth }) {
   return <div className="login">
     <div className="login-panel">
       <div className="login-brand"><div className="brand-mark"><ReceiptText /></div><strong>MANAGEYOURSTOCK</strong></div>
-      <div className="login-copy"><h1>{t("Sign in")}</h1><p>Enter your phone number and password.</p></div>
+    <div className="login-copy"><h1>Manage Your Stock</h1><h2>Stock Manager &amp; StockManagement</h2><p>Manage products, monitor stock and organize your inventory efficiently. Sign in with your phone number and password.</p></div>
       {error && <Notice tone="error">{error}</Notice>}
       <form className="login-form" onSubmit={login}>
         <label><span>{t("Phone number")}</span><input value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="username" autoFocus placeholder={t('Enter phone number')} /></label>
@@ -1502,8 +1515,8 @@ function AppRoutes() {
   const t = (text) => translations[preferences.language]?.[text] || text
   const preferenceValue = { ...preferences, setTheme: (theme) => setPreferences((current) => ({ ...current, theme })), setLanguage: (language) => setPreferences((current) => ({ ...current, language })), setMode: (mode) => setPreferences((current) => ({ ...current, mode })), t }
   const protect = (children) => <Protected auth={auth}>{children}</Protected>
-  if (auth.lockedAccount && !auth.showOnlineLogin && !auth.user) return <PreferencesContext.Provider value={preferenceValue}><OfflineUnlock auth={auth} /></PreferencesContext.Provider>
-  return <OfflineSyncProvider user={auth.user} reauthenticate={auth.reauthenticate}><PreferencesContext.Provider value={preferenceValue}><Routes>
+  if (auth.lockedAccount && !auth.showOnlineLogin && !auth.user) return <PreferencesContext.Provider value={preferenceValue}><RouteSeo /><OfflineUnlock auth={auth} /></PreferencesContext.Provider>
+  return <OfflineSyncProvider user={auth.user} reauthenticate={auth.reauthenticate}><PreferencesContext.Provider value={preferenceValue}><RouteSeo /><Routes>
     <Route index element={<Navigate to="/dashboard" replace />} />
     <Route path="/login" element={<Login auth={auth} />} />
     <Route path="/dashboard" element={protect(<Dashboard auth={auth} />)} />
