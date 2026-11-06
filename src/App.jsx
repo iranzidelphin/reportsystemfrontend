@@ -3,9 +3,9 @@ import { HashRouter, NavLink, Navigate, Route, Routes, useLocation, useNavigate 
 import {
   BarChart3, CalendarDays, ChevronDown, CircleDollarSign, ClipboardList,
   Edit2, LogOut, Menu, Package, Plus, ReceiptText, Search,
-  Trash2, Users, Wallet, X, Boxes, LayoutGrid, ShoppingCart, RotateCcw,
+  Trash2, Users, Wallet, X, LayoutGrid, ShoppingCart, RotateCcw,
   RefreshCw, Grid2X2, List, Eye, Copy, Download,
-  FileText, UserRound, CircleUserRound, Building2, Settings, LockKeyhole, Pencil, Sun, Moon,
+  FileText, CircleUserRound, Building2, Settings, LockKeyhole, Pencil, Sun, Moon,
 } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import api, { API_BASE_URL } from './services/api'
@@ -332,12 +332,68 @@ function Card({ children, className = '' }) {
   return <section className={'card ' + className}>{children}</section>
 }
 
+function Drawer({ isOpen, onClose, currentRoute, onNavigate, onLogout, t }) {
+  const drawerRef = useRef(null)
+  const touchStartX = useRef(null)
+  const menuItems = [
+    { label: 'Dashboard', to: '/dashboard', icon: LayoutGrid },
+    { heading: 'STOCK' },
+    { label: 'All Products', to: '/products', icon: Package },
+    { label: 'Sold Products', to: '/sold-products', icon: ShoppingCart },
+    { label: 'Reports', to: '/reports', icon: FileText },
+    { label: 'Record Sale', to: '/transactions/new', icon: ReceiptText },
+    { label: 'Add Product', to: '/products/new', icon: Plus },
+    { heading: 'ACCOUNT' },
+    { label: 'Account Information', to: '/account', icon: CircleUserRound },
+    { label: 'Users', to: '/users', icon: Users },
+    { label: 'Settings', to: '/settings', icon: Settings },
+  ]
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+    const onKeyDown = (event) => { if (event.key === 'Escape') onClose() }
+    const onPopState = () => onClose()
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('popstate', onPopState)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('popstate', onPopState)
+    }
+  }, [isOpen, onClose])
+
+  const handleTouchStart = (event) => { touchStartX.current = event.touches[0]?.clientX ?? null }
+  const handleTouchEnd = (event) => {
+    const startX = touchStartX.current
+    const endX = event.changedTouches[0]?.clientX
+    touchStartX.current = null
+    if (startX !== null && endX !== undefined && startX - endX > 56) onClose()
+  }
+  const isActive = (to) => to === '/products' ? currentRoute === to : currentRoute === to || currentRoute.startsWith(`${to}/`)
+
+  return <>
+    <button className={'drawer-overlay ' + (isOpen ? 'is-open' : '')} aria-label="Close navigation" tabIndex={isOpen ? 0 : -1} onClick={onClose} />
+    <aside ref={drawerRef} className={'drawer ' + (isOpen ? 'is-open' : '')} aria-hidden={!isOpen} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      <header className="drawer-header">
+        <strong>Business workspace</strong>
+        <button type="button" className="drawer-close" aria-label="Close menu" onClick={onClose}><X size={18} /></button>
+      </header>
+      <nav className="drawer-navigation" aria-label="Main navigation">
+        {menuItems.map((item) => {
+          if (item.heading) return <p className="drawer-section-heading" key={item.heading}>{t(item.heading)}</p>
+          const Icon = item.icon
+          return <button type="button" key={item.to} className={isActive(item.to) ? 'active' : ''} onClick={() => onNavigate(item.to)}><Icon size={17} /><span>{t(item.label)}</span></button>
+        })}
+      </nav>
+      <button className="drawer-logout" type="button" onClick={onLogout}><LogOut size={17} /><span>{t('Logout')}</span></button>
+    </aside>
+  </>
+}
+
 function AppShell({ children, title, auth, productHeader = false, saleHeader = false, soldProductsHeader = false, productsHeader = false }) {
   const { t, mode, theme, setTheme } = useContext(PreferencesContext)
-  const [open, setOpen] = useState(false)
-  const [stockOpen, setStockOpen] = useState(true)
-  const [accountOpen, setAccountOpen] = useState(true)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
   const navigate = useNavigate()
+  const location = useLocation()
   const [globalSearch, setGlobalSearch] = useState('')
   const globalSearchRef = useRef(null)
   const themeToggle = <button className="icon-button header-theme-toggle" type="button" aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}</button>
@@ -349,39 +405,15 @@ function AppShell({ children, title, auth, productHeader = false, saleHeader = f
     return () => window.removeEventListener('keydown', onShortcut)
   }, [saleHeader])
 
-  return <div className={'app-shell' + (productHeader ? ' product-shell' : '') + (saleHeader ? ' sale-shell' : '') + (soldProductsHeader ? ' sold-products-shell' : '') + (productsHeader ? ' products-page-shell' : '')}>
-    {open && <button className="scrim" aria-label="Close navigation" onClick={() => setOpen(false)} />}
-    <aside className={'sidebar ' + (open ? 'open' : '')}>
-      <div className="brand">
-        <div className="brand-mark"><ReceiptText size={21} /></div>
-        <div><strong>MANAGEYOURSTOCK</strong></div>
-        <button className="mobile-close" onClick={() => setOpen(false)}><X size={18} /></button>
-      </div>
-      <div className="shop-label">BUSINESS WORKSPACE</div>
-      <nav className="side-navigation">
-        <NavLink to="/dashboard" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><LayoutGrid size={17} /><span>{t('Dashboard')}</span></NavLink>
-        <button className="side-section" onClick={() => setStockOpen((value) => !value)} aria-expanded={stockOpen}><span><Boxes size={17} /> {t('STOCK')}</span><ChevronDown size={15} className={stockOpen ? 'section-chevron open' : 'section-chevron'} /></button>
-        {stockOpen && <div className="side-subnav">
-          <NavLink to="/products" end onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Package size={16} /><span>{t('All Products')}</span></NavLink>
-          <NavLink to="/sold-products" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><ShoppingCart size={16} /><span>{t('Sold Products')}</span></NavLink>
+  const closeMenu = useCallback(() => setIsMenuOpen(false), [])
+  const handleNavigate = useCallback((to) => { navigate(to); closeMenu() }, [navigate, closeMenu])
+  const handleLogout = useCallback(async () => { closeMenu(); if (await auth.logout()) navigate('/login') }, [auth, navigate, closeMenu])
 
-          <NavLink to="/reports" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><FileText size={16} /><span>{t('Reports')}</span></NavLink>
-          <NavLink to="/transactions/new" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><ShoppingCart size={16} /><span>{t('Record Sale')}</span></NavLink>
-          {canManageAdmin(auth.user) && <NavLink to="/products/new" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active add-product-link' : 'add-product-link'}><Plus size={16} /><span>{t('Add Product')}</span></NavLink>}
-        </div>}
-        <button className="side-section account-section" onClick={() => setAccountOpen((value) => !value)} aria-expanded={accountOpen}><span><UserRound size={17} /> {t('ACCOUNT')}</span><ChevronDown size={15} className={accountOpen ? 'section-chevron open' : 'section-chevron'} /></button>
-        {accountOpen && <div className="side-subnav">
-          <NavLink to="/account" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><CircleUserRound size={16} /><span>{t('Account Information')}</span></NavLink>
-          {canManageAdmin(auth.user) && <NavLink to="/users" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Users size={16} /><span>{t('Users')}</span></NavLink>}
-          <NavLink to="/settings" onClick={() => setOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Settings size={16} /><span>{t('Settings')}</span></NavLink>
-        </div>}
-      </nav>
-      <button className="logout" onClick={async () => { if (await auth.logout()) navigate('/login') }}><LogOut size={18} /> {t('Logout')}</button>
-      <p className="sidebar-foot">manageyourstock</p>
-    </aside>
+  return <div className={'app-shell' + (productHeader ? ' product-shell' : '') + (saleHeader ? ' sale-shell' : '') + (soldProductsHeader ? ' sold-products-shell' : '') + (productsHeader ? ' products-page-shell' : '')}>
+    <Drawer isOpen={isMenuOpen} onClose={closeMenu} currentRoute={location.pathname} onNavigate={handleNavigate} onLogout={handleLogout} t={t} />
     <main>
       <header className="topbar">
-        <button className="menu-button" onClick={() => setOpen(true)}><Menu size={21} /></button>
+        <button className="menu-button" type="button" aria-label="Open menu" onClick={() => setIsMenuOpen(true)}><Menu size={21} /></button>
         {productHeader ? <><div className="product-breadcrumb"><span>{t('Overview')}</span><b>/</b><strong>{t(title)}</strong></div><div className="product-top-actions"><span>Kigali Main Store</span>{themeToggle}<div className="avatar">{initials}</div><div className="user-name"><strong>{auth.user?.name || 'Shop User'}</strong><span>{auth.user?.role || 'USER'}</span></div></div></> : saleHeader ? <><div className="sale-header-title"><ReceiptText size={16} /><strong>{t(title)}</strong></div><form className="global-search" onSubmit={(event) => { event.preventDefault(); navigate('/products', { state: { search: globalSearch.trim() } }) }}><button className="global-search-submit" type="submit" aria-label="Search products" title="Search products"><Search size={15} /></button><input ref={globalSearchRef} value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} placeholder="Search products... (Ctrl+K)" /><kbd>Ctrl K</kbd></form>{themeToggle}<div className="sale-header-avatar">{initials}</div></> : <><div><p className="eyebrow">{t('Overview').toUpperCase()}</p><h1>{t(title)}</h1></div>
         <div className="top-actions">
           {themeToggle}
@@ -863,6 +895,11 @@ function ProductsPage({ auth, initialAdd = false }) {
     const quantity = Number(form.quantity)
     const enteredCost = Number(form.costPrice || 0)
     const body = { ...form, costPrice: combinedCost && quantity ? enteredCost / quantity : enteredCost, sellingPrice: Number(form.sellingPrice || 0), quantity, lowStockLevel: Number(form.lowStockLevel) }
+    if (body.sellingPrice > 0 && body.sellingPrice < body.costPrice) {
+      setSaving(false)
+      setError('Selling price cannot be lower than the purchase price.')
+      return
+    }
     try {
       if (editingId) await api.put(`/products/${editingId}`, body)
       else await api.post('/products', body)
