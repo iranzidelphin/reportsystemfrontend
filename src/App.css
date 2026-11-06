@@ -14,6 +14,8 @@
   html,body,#root{width:100%;max-width:100%;overflow-x:hidden}
   .app-shell,.page-content,.card,.recent,.payment-card,.form-card,.page-hero{max-width:100%;box-sizing:border-box}
   .app-shell,main{width:100%;min-width:0;margin-left:0;overflow-x:hidden}
+  main{padding-top:52px}
+  .topbar{position:fixed!important;top:0;left:0;right:0;height:52px!important;min-height:52px!important;z-index:20;box-sizing:border-box}
   .page-content{padding:12px;background:#f3f6fb}
   .topbar{position:sticky;top:0;z-index:8}
   .page-hero,.recent,.payment-card,.form-card,.quick{border-radius:8px}

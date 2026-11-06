@@ -1091,7 +1091,12 @@ function UserSalesSheet({ user, range, onClose, onDownload }) {
   const [rows, setRows] = useState(user.rows)
   const [loading, setLoading] = useState(false)
   const closeRef = useRef(null)
-  useEffect(() => { window.setTimeout(() => closeRef.current?.focus(), 0) }, [])
+  useEffect(() => {
+    window.setTimeout(() => closeRef.current?.focus(), 0)
+    const onKeyDown = (event) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
   useEffect(() => { let active = true; const params = { ...sheetRange, userId: user.userId }; setLoading(true); api.get('/reports/sales', { params }).then(({ data }) => active && setRows(data.data?.transactions || [])).catch(() => active && setRows([])).finally(() => active && setLoading(false)); return () => { active = false } }, [sheetRange.fromDate, sheetRange.toDate, user.userId])
   const totalSold = rows.reduce((sum, row) => sum + saleRevenue(row), 0); const totalEarned = rows.reduce((sum, row) => sum + saleProfit(row), 0); const products = groupProductsSold(rows)
   return <div className="report-user-sheet-backdrop" onMouseDown={onClose}><section className="report-user-sheet" role="dialog" aria-modal="true" aria-labelledby="user-sales-report-title" onMouseDown={(event) => event.stopPropagation()}><header><div><h2 id="user-sales-report-title">{user.name}</h2><p>{t('Sales report')}</p></div><button ref={closeRef} type="button" className="button secondary" onClick={onClose}>{t('Close')}</button></header><div className="report-sheet-dates"><label>{t('From date')}<input type="date" value={sheetRange.fromDate} max={sheetRange.toDate} onChange={(event) => setSheetRange({ ...sheetRange, fromDate: event.target.value })} /></label><label>{t('To date')}<input type="date" value={sheetRange.toDate} min={sheetRange.fromDate} onChange={(event) => setSheetRange({ ...sheetRange, toDate: event.target.value })} /></label></div><div className="report-sheet-totals"><div><span>{t('Total sold')}</span><strong>{money(totalSold)} <small>RWF</small></strong></div><div><span>{t('Total earned')}</span><strong className="profit-value">{money(totalEarned)} <small>RWF</small></strong></div><div><span>{t('Sales')}</span><strong>{rows.length}</strong></div></div>{loading ? <p className="report-user-empty">Loading…</p> : <><h3>{t('Products sold')}</h3><div className="report-sheet-list">{products.map((item) => <div key={`${item.name}-${item.variant}`}><span><b>{item.name}</b><small>{item.quantity} pcs{item.variant ? ` · ${item.variant}` : ''}</small></span><strong>{money(item.revenue)} <em className="profit-value">+{money(item.profit)}</em></strong></div>)}</div><h3>{t('Sales')} ({t('Newest first')})</h3><div className="report-sheet-list">{[...rows].sort((a, b) => new Date(b.transactionDate || b.saleDate) - new Date(a.transactionDate || a.saleDate)).map((row) => <div key={row._id}><span><b>{row.serviceOrProduct || row.productOrService}</b><small>{new Date(row.transactionDate || row.saleDate).toLocaleDateString()} · {row.customerName || '–'} · {row.paymentMethod === 'MOMO' ? 'MoMo Pay' : row.paymentMethod}</small></span><strong>{money(saleRevenue(row))}<em className="profit-value">+{money(saleProfit(row))}</em></strong></div>)}</div></>}<button type="button" className="button secondary report-pdf-button" onClick={() => onDownload(user, sheetRange)}><Download size={16} /> {t('Download PDF report')}</button><button type="button" className="button secondary" onClick={onClose}>{t('Close')}</button></section></div>
@@ -1115,6 +1120,17 @@ function ReportsPage({ auth }) {
   const data = report.data || {}
   const userSales = groupSalesByUser(data.transactions || [], users.data || [], auth.user, isAdmin)
   const visibleUserSales = listUser ? userSales.filter((item) => item.userId === listUser) : userSales
+  useEffect(() => {
+    if (!viewingUser) return undefined
+    window.history.pushState({ reportUserSheet: true }, '')
+    const onPopState = () => setViewingUser(null)
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [viewingUser])
+  const closeUserSheet = () => {
+    if (window.history.state?.reportUserSheet) window.history.back()
+    else setViewingUser(null)
+  }
   const downloadReport = async (user, reportRange = range) => {
     const userId = user?.userId || (isAdmin ? selectedUser : '')
     const params = { ...reportRange, ...(userId ? { userId } : {}) }
@@ -1131,7 +1147,7 @@ function ReportsPage({ auth }) {
     ].map(([label, value]) => <Card className="stat-card" key={label}><p>{label}</p><h2>{money(value)}{label === 'Transactions' ? <small> sales</small> : <small> RWF</small>}</h2></Card>)}</div>
  <Card className="recent report-user-summary"><div className="report-user-heading"><div><h2>{t('Sales by user')}</h2><p>{range.fromDate} – {range.toDate}</p></div><label>Show<select value={listUser} onChange={(event) => setListUser(event.target.value)}><option value="">{t('All users')}</option>{userSales.map((item) => <option key={item.userId} value={item.userId}>{item.name}</option>)}</select></label></div>{!visibleUserSales.some((item) => item.salesCount) ? <p className="report-user-empty">{t('No sales in this period')}</p> : <div className="report-user-list">{visibleUserSales.map((item) => <article key={item.userId}><div className="report-user-avatar">{item.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</div><div className="report-user-copy"><strong>{item.name}</strong><span>{money(item.totalSold)} RWF · {item.salesCount} {t('sales')}</span><i><b style={{ width: `${Math.max(...userSales.map((sale) => sale.totalSold), 1) ? item.totalSold / Math.max(...userSales.map((sale) => sale.totalSold), 1) * 100 : 0}%` }} /></i></div><button type="button" className="row-action" aria-label={`Download PDF for ${item.name}`} onClick={() => downloadReport(item)} disabled={downloading === item.userId}><Download size={16} /></button><button type="button" className="button secondary" onClick={() => setViewingUser(item)}>{t('View')}</button></article>)}</div>}</Card>
     {downloadError && <Notice tone="error">{downloadError}</Notice>}
-    {viewingUser && <UserSalesSheet user={viewingUser} range={range} onClose={() => setViewingUser(null)} onDownload={downloadReport} />}
+    {viewingUser && <UserSalesSheet user={viewingUser} range={range} onClose={closeUserSheet} onDownload={downloadReport} />}
  <Card className="recent"><SectionTitle title="Best-selling products" text="Ranked by quantity sold in the selected period" /><div className="table-wrap"><table className="simple-table"><thead><tr><th>Product</th><th>SKU</th><th>Quantity sold</th><th>Sales</th></tr></thead><tbody>{(data.bestSellingProducts || []).length ? data.bestSellingProducts.map((item) => <tr key={item.productId}><td><strong>{item.name}</strong></td><td>{item.sku || '—'}</td><td>{item.quantitySold}</td><td>{money(item.sales)} RWF</td></tr>) : <tr><td colSpan="4" className="empty-cell">No product sales for this period.</td></tr>}</tbody></table></div><MobileRecordList items={data.bestSellingProducts || []} empty="No product sales for this period." getTitle={(item) => item.name} getSubtitle={(item) => `${item.sku || '—'} · ${item.quantitySold} sold`} getRightValue={(item) => `${money(item.sales)} RWF`} getFields={(item) => [['Product', item.name], ['SKU', item.sku], ['Quantity sold', item.quantitySold], ['Sales', `${money(item.sales)} RWF`]]} /></Card>
     <Card className="recent"><SectionTitle title="Sales transactions" text="Recorded sales for the selected date range" /><TransactionTable rows={data.transactions || []} loading={report.loading} error={report.error} /></Card>
   </div></AppShell>
