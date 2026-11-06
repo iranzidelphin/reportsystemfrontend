@@ -224,6 +224,18 @@ function useAuth() {
     setShowOnlineLogin(true)
   }, [])
 
+  useEffect(() => {
+    if (!offline || !user) return undefined
+    let timer
+    const lock = () => getOfflineAccount().then((account) => {
+      setUser(null); setOffline(false); setOfflinePin(''); setLockedAccount(account || null)
+    }).catch(() => {})
+    const reset = () => { window.clearTimeout(timer); timer = window.setTimeout(lock, AUTO_LOCK_MINUTES * 60 * 1000) }
+    ;['pointerdown', 'keydown', 'touchstart'].forEach((event) => window.addEventListener(event, reset))
+    reset()
+    return () => { window.clearTimeout(timer); ['pointerdown', 'keydown', 'touchstart'].forEach((event) => window.removeEventListener(event, reset)) }
+  }, [offline, user])
+
   const reauthenticate = useCallback(async (providedPin) => {
     const pin = providedPin || offlinePin
     if (!pin) return false
@@ -430,19 +442,6 @@ function MobileRecordList({ items = [], loading, error, empty, getTitle, getSubt
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
-  useEffect(() => {
-    if (!offline || !user) return undefined
-    let timer
-    const lock = () => {
-      getOfflineAccount().then((account) => {
-        setUser(null); setOffline(false); setOfflinePin(''); setLockedAccount(account || null)
-      }).catch(() => {})
-    }
-    const reset = () => { window.clearTimeout(timer); timer = window.setTimeout(lock, AUTO_LOCK_MINUTES * 60 * 1000) }
-    ;['pointerdown', 'keydown', 'touchstart'].forEach((event) => window.addEventListener(event, reset))
-    reset()
-    return () => { window.clearTimeout(timer); ['pointerdown', 'keydown', 'touchstart'].forEach((event) => window.removeEventListener(event, reset)) }
-  }, [offline, user])
   const grouped = groupBy ? items.reduce((result, item) => { const key = groupBy(item); (result[key] ||= []).push(item); return result }, {}) : { '': items }
   return <div className="mobile-record-list">
     {loading && <p className="mobile-record-state">{t('Loading records...')}</p>}
