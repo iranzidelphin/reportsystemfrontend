@@ -5,13 +5,14 @@ import {
   Edit2, LogOut, Menu, Package, Plus, ReceiptText, Search,
   Trash2, Users, Wallet, X, LayoutGrid, ShoppingCart, RotateCcw,
   RefreshCw, Grid2X2, List, Eye, Copy, Download,
-  FileText, CircleUserRound, Building2, Settings, LockKeyhole, Pencil, Sun, Moon,
+  FileText, CircleUserRound, Building2, Settings, SlidersHorizontal, LockKeyhole, Pencil, Sun, Moon,
 } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import api, { API_BASE_URL } from './services/api'
 import { AUTO_LOCK_MINUTES, clearPrivateData, getOfflineAccount, rememberOfflineAccount, verifyOfflinePin, offlineDb, cacheSalesHistory, cacheApiData, getCachedApiData, loadWithCache } from './offline/db'
 import { OfflineSyncProvider, OfflineSyncStatus } from './offline/OfflineSyncProvider'
 import { useOfflineSync } from './offline/OfflineSyncContext'
+import { PRODUCT_FIELD_DEFINITIONS, PRODUCT_PRESETS, createProductFieldConfig, getVisibleFields, isFieldVisible, normalizeProductPayload, productCalculations, validateProduct } from './productForm'
 import './App.css'
 
 const money = (value) => new Intl.NumberFormat('en-US').format(Number(value || 0))
@@ -345,7 +346,7 @@ function RouteSeo() {
   return null
 }
 
-function Drawer({ isOpen, onClose, currentRoute, onNavigate, onLogout, t }) {
+function Drawer({ isOpen, onClose, currentRoute, onNavigate, auth, onLogout, t }) {
   const drawerRef = useRef(null)
   const touchStartX = useRef(null)
   const menuItems = [
@@ -355,7 +356,7 @@ function Drawer({ isOpen, onClose, currentRoute, onNavigate, onLogout, t }) {
     { label: 'Sold Products', to: '/sold-products', icon: ShoppingCart },
     { label: 'Reports', to: '/reports', icon: FileText },
     { label: 'Record Sale', to: '/transactions/new', icon: ReceiptText },
-    { label: 'Add Product', to: '/products/new', icon: Plus },
+    ...(canManageAdmin(auth.user) ? [{ label: 'Add Product', to: '/products/new', icon: Plus }, { label: 'Product Settings', to: '/settings/products', icon: SlidersHorizontal }] : []),
     { heading: 'ACCOUNT' },
     { label: 'Account Information', to: '/account', icon: CircleUserRound },
     { label: 'Users', to: '/users', icon: Users },
@@ -423,7 +424,7 @@ function AppShell({ children, title, auth, productHeader = false, saleHeader = f
   const handleLogout = useCallback(async () => { closeMenu(); if (await auth.logout()) navigate('/login') }, [auth, navigate, closeMenu])
 
   return <div className={'app-shell' + (productHeader ? ' product-shell' : '') + (saleHeader ? ' sale-shell' : '') + (soldProductsHeader ? ' sold-products-shell' : '') + (productsHeader ? ' products-page-shell' : '')}>
-    <Drawer isOpen={isMenuOpen} onClose={closeMenu} currentRoute={location.pathname} onNavigate={handleNavigate} onLogout={handleLogout} t={t} />
+    <Drawer isOpen={isMenuOpen} onClose={closeMenu} currentRoute={location.pathname} onNavigate={handleNavigate} auth={auth} onLogout={handleLogout} t={t} />
     <main>
       <header className="topbar">
         <button className="menu-button" type="button" aria-label="Open menu" onClick={() => setIsMenuOpen(true)}><Menu size={21} /></button>
@@ -856,7 +857,70 @@ function SoldProductsPage({ auth }) {
   </div></AppShell>
 }
 
-const blankProduct = { name: '', sku: '', category: '', brand: '', description: '', unit: 'Pieces (pcs)', costPrice: 0, sellingPrice: '', quantity: 0, lowStockLevel: 5, location: 'Shelf A2', supplier: '', status: 'ACTIVE', notes: '' }
+const blankProduct = { name: '', sku: '', category: '', brand: '', model: '', description: '', unit: 'Pieces (pcs)', trackStock: true, packageName: '', packageSize: null, packageSellingPrice: null, buyBasis: 'unit', buyPrice: null, estimatedCostPerUnit: null, expiryDate: null, costPrice: 0, sellingPrice: '', quantity: 0, lowStockLevel: 5, location: 'Shelf A2', supplier: '', status: 'ACTIVE', notes: '' }
+
+function ProductSettingsPage({ auth }) {
+  const settingsRequest = useApi('/product-settings', { initial: null })
+  const [draft, setDraft] = useState(null)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [tab, setTab] = useState('fields')
+  const initial = settingsRequest.data
+  useEffect(() => { if (initial && !draft) setDraft({ preset: initial.preset || 'bar', fields: initial.fields || createProductFieldConfig('bar') }) }, [initial, draft])
+  useEffect(() => {
+    if (!draft) return undefined
+    const warn = (event) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [draft])
+  if (settingsRequest.loading && !draft) return <AppShell title="Product Settings" auth={auth} saleHeader><div className="page-content"><Card className="catalog-state">Loading product settings…</Card></div></AppShell>
+  if (!draft) return <AppShell title="Product Settings" auth={auth} saleHeader><div className="page-content"><Notice tone="error">{settingsRequest.error || 'Product settings could not be loaded.'}</Notice></div></AppShell>
+  const fields = draft.fields
+  const preview = { trackStock: true, buyBasis: 'package', purchasePrice: 21600, estimatedCost: 900, quantity: 48, packageSize: 24, packagePrice: 27000, sellingPrice: 1200, packageVisible: isFieldVisible('pkg', fields, true) }
+  const calc = productCalculations(preview)
+  const updateField = (key, change) => setDraft((current) => ({ ...current, preset: 'custom', fields: { ...current.fields, [key]: { ...current.fields[key], ...change } } }))
+  const applyPreset = (preset) => setDraft({ preset, fields: createProductFieldConfig(preset) })
+  const reset = () => { setDraft({ preset: initial?.preset || 'bar', fields: initial?.fields || createProductFieldConfig('bar') }); setMessage(''); setError('') }
+  const save = async () => { setSaving(true); setMessage(''); setError(''); try { const { data } = await api.put('/product-settings', draft); setDraft({ preset: data.data.preset, fields: data.data.fields }); setMessage('Product settings saved.') } catch (saveError) { setError(apiMessage(saveError)) } finally { setSaving(false) } }
+  const renderPreview = () => <Card className="product-settings-preview"><h2>Register product <small>(preview)</small></h2>{['Product information', 'Stock and pricing', 'Storage and supplier'].map((section) => <section key={section}><h3>{section}</h3><div className="product-settings-preview-grid">{PRODUCT_FIELD_DEFINITIONS.filter(([, , group]) => group === section).filter(([key]) => isFieldVisible(key, fields, preview.trackStock)).map(([key]) => <label key={key}>{fields[key].label}{fields[key].required && <i>*</i>}{key === 'track' ? <input type="checkbox" defaultChecked /> : key === 'pkg' ? <span className="settings-package-preview"><input placeholder="Crate" /><input type="number" defaultValue="24" /></span> : key === 'buy' ? <span className="settings-package-preview"><input defaultValue="21600" /><select defaultValue="package"><option value="unit">per unit</option><option value="package">per package</option><option value="all">all items</option></select></span> : <input placeholder={fields[key].label} defaultValue={key === 'name' ? 'Fanta Orange 30cl' : key === 'category' ? 'Soft drinks' : key === 'brand' ? 'Coca-Cola' : key === 'model' ? '30cl' : key === 'qty' ? '48' : key === 'unit' ? 'Bottle' : key === 'sell' ? '1200' : key === 'loc' ? 'Store room' : ''} />}</label>)}</div></section>)}</Card>
+  const renderCalculation = () => <Card className="product-settings-calculation"><h2>Buy, store, sell</h2><div className="settings-flow"><div><span>Buy</span><strong>1 Crate (24 Bottle) for 21,600 RWF</strong></div><div><span>Store</span><strong>48 Bottle in stock</strong></div><div><span>Sell</span><strong>1 Bottle at 1,200 RWF<br />or 1 Crate at 27,000 RWF</strong></div></div><dl>{[['Cost per unit', calc.cost], ['Profit per unit', calc.profit], ['Margin', `${calc.margin.toFixed(1)} %`], ['Stock value', calc.stockValue], ['Profit per package', calc.profitPerPackage], ['Selling 1 package deducts', `${calc.packageDeduction} Bottle`]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{typeof value === 'number' ? `${money(value)} RWF` : value}</dd></div>)}</dl>{calc.belowCost && <p className="settings-cost-warning">Selling price is below cost.</p>}</Card>
+  return <AppShell title="Product Settings" auth={auth} saleHeader><div className="page-content product-settings-page">
+    {message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
+    <header className="product-settings-heading"><div><h1>Product Settings</h1><p>Control the fields your team uses when registering products.</p></div><div><button type="button" className="button secondary" onClick={reset}>Reset</button><button type="button" className="button" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button></div></header>
+    <div className="product-settings-presets">{Object.entries(PRODUCT_PRESETS).map(([key, preset]) => <button type="button" className={draft.preset === key ? 'active' : ''} key={key} onClick={() => applyPreset(key)}>{preset.label}</button>)}{draft.preset === 'custom' && <span>Customized</span>}</div>
+    <div className="product-settings-tabs"><button className={tab === 'fields' ? 'active' : ''} onClick={() => setTab('fields')}>Fields</button><button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}>Preview</button><button className={tab === 'calculation' ? 'active' : ''} onClick={() => setTab('calculation')}>Calculation</button><button className={tab === 'options' ? 'active' : ''} onClick={() => setTab('options')}>Option Lists</button></div>
+    {tab === 'options' ? <OptionListsPanel auth={auth} /> : <>
+      <div className="product-settings-grid"><Card className={'product-settings-fields tab-' + tab}><h2>Settings: product form</h2><p>Rename a field, show or hide it, or make it required.</p><div className="product-settings-table"><div className="settings-table-head"><span>Field label</span><span>Show</span><span>Required</span></div>{PRODUCT_FIELD_DEFINITIONS.map(([key, label, , locked]) => <div className="settings-field-row" key={key}><label><span className={locked ? 'settings-lock' : ''}>{locked ? '🔒' : ''}</span><input aria-label={`${label} field label`} value={fields[key]?.label || label} maxLength="40" onChange={(event) => updateField(key, { label: event.target.value })} /></label><label><input aria-label={`Show ${fields[key]?.label || label}`} type="checkbox" disabled={locked} checked={Boolean(fields[key]?.show)} onChange={(event) => updateField(key, { show: event.target.checked })} /></label><label><input aria-label={`Require ${fields[key]?.label || label}`} type="checkbox" disabled={key === 'track'} checked={Boolean(fields[key]?.required)} onChange={(event) => updateField(key, { required: event.target.checked })} /></label></div>)}</div></Card>{renderPreview()}</div>{renderCalculation()}</>}
+    <div className="product-settings-mobile-save"><button type="button" className="button" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button></div>
+  </div></AppShell>
+}
+
+function OptionListsPanel({ auth }) {
+  const [type, setType] = useState('category')
+  const [name, setName] = useState('')
+  const [parentBrand, setParentBrand] = useState('')
+  const [refresh, setRefresh] = useState(0)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const options = useApi('/products/options', { params: { refresh }, initial: { categories: [], brands: [], models: [], modelOptions: [] } })
+  if (!canManageAdmin(auth.user)) return <Notice tone="error">Only administrators can manage product option lists.</Notice>
+  const rows = type === 'category' ? options.data?.categories || [] : type === 'brand' ? options.data?.brands || [] : options.data?.models || []
+  const add = async (event) => {
+    event.preventDefault(); setError(''); setMessage('')
+    try { await api.post('/products/options', { type, name, parentBrand }); setName(''); setParentBrand(''); setMessage('Option saved.'); setRefresh((value) => value + 1) } catch (requestError) { setError(apiMessage(requestError)) }
+  }
+  const deactivate = async (option) => {
+    if (!window.confirm(`Deactivate ${option}? Existing products keep their saved value.`)) return
+    setError(''); setMessage('')
+    try { await api.patch(`/products/options/${type}`, { name: option, newName: null }); setMessage('Option deactivated.'); setRefresh((value) => value + 1) } catch (requestError) { setError(apiMessage(requestError)) }
+  }
+  return <Card className="product-options-manager"><div className="product-options-heading"><div><h2>Option Lists</h2><p>Categories, brands, and models are shared by this workspace. Options used by products cannot be deactivated.</p></div></div>{message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
+    <div className="product-option-tabs">{[['category', 'Categories'], ['brand', 'Brands'], ['model', 'Models']].map(([key, label]) => <button type="button" className={type === key ? 'active' : ''} key={key} onClick={() => { setType(key); setError(''); setMessage('') }}>{label}</button>)}</div>
+    <form className="product-option-add" onSubmit={add}><input aria-label={`New ${type}`} placeholder={`Add ${type}`} value={name} onChange={(event) => setName(event.target.value)} required />{type === 'model' && <select aria-label="Model brand" value={parentBrand} onChange={(event) => setParentBrand(event.target.value)} required><option value="">Choose brand</option>{(options.data?.brands || []).map((brand) => <option key={brand} value={brand}>{brand}</option>)}</select>}<button className="button" type="submit"><Plus size={14} /> Add</button></form>
+    <div className="product-option-list">{rows.map((option) => <div className="product-option-row" key={`${type}-${option}`}><span>{option}{type === 'model' && <small> · {(options.data?.modelOptions || []).find((row) => row.name === option)?.parentBrand || 'Any brand'}</small>}</span><button type="button" className="button secondary option-delete" onClick={() => deactivate(option)}>Deactivate</button></div>)}{!rows.length && <p className="product-option-empty">No {type} options yet.</p>}</div>
+  </Card>
+}
 
 function LowStockList({ items = [] }) {
   const { t } = useContext(PreferencesContext)
@@ -895,19 +959,24 @@ function ProductsPage({ auth, initialAdd = false }) {
   const params = Object.fromEntries(Object.entries({ ...filters, refresh }).filter(([key, value]) => key !== 'brand' && key !== 'sort' && value !== ''))
   const list = useApi('/products', { params, initial: [], refreshMs: liveRefreshMs })
   const optionCatalog = useApi('/products/options', { params: { refresh: optionsRefresh }, initial: { categories: [], brands: [], models: [] } })
+  const productSettings = useApi('/product-settings', { initial: null })
+  const formConfig = productSettings.data?.fields ? { fields: productSettings.data.fields } : { fields: createProductFieldConfig('bar') }
   const rows = mode === 'offline'
     ? offlineSync.products
     : (list.data?.length ? list.data : offlineSync.products)
   const categories = [...new Set([...(optionCatalog.data?.categories || []), ...rows.map((row) => row.category).filter(Boolean)])]
   const brands = [...new Set([...(optionCatalog.data?.brands || []), ...rows.map((row) => row.brand).filter(Boolean)])]
-  const models = [...new Set([...(optionCatalog.data?.models || []), ...rows.map((row) => row.description).filter(Boolean)])]
+  const configuredModels = (optionCatalog.data?.modelOptions || []).filter((option) => !option.parentBrand || option.parentBrand === form.brand).map((option) => option.name)
+  const models = [...new Set([...configuredModels, ...rows.filter((row) => !form.brand || row.brand === form.brand).map((row) => row.model || row.description).filter(Boolean)])]
   const startAdd = () => { setEditingId(''); setForm(blankProduct); setCombinedCost(false); setFormOpen(true); setError(''); setMessage(''); navigate('/products/new') }
-  const startEdit = (row) => { setEditingId(row._id); setForm({ ...blankProduct, ...row, sku: row.sku || '' }); setFormOpen(true); setError(''); setMessage('') }
+  const startEdit = (row) => { setEditingId(row._id); setForm({ ...blankProduct, ...row, model: row.model || row.description || '', sku: row.sku || '', buyPrice: row.buyPrice ?? row.costPrice }); setFormOpen(true); setError(''); setMessage('') }
   const submit = async (event) => {
     event.preventDefault(); setSaving(true); setError(''); setMessage('')
-    const quantity = Number(form.quantity)
-    const enteredCost = Number(form.costPrice || 0)
-    const body = { ...form, costPrice: combinedCost && quantity ? enteredCost / quantity : enteredCost, sellingPrice: Number(form.sellingPrice || 0), quantity, lowStockLevel: Number(form.lowStockLevel) }
+    if (mode === 'offline' || !navigator.onLine) { setSaving(false); setError('Product changes require an internet connection. Your saved catalogue remains available offline.'); return }
+    const validation = validateProduct(formConfig, form)
+    if (!validation.valid) { setSaving(false); setError(Object.values(validation.errors)[0]); return }
+    const values = { ...form, buyPrice: combinedCost ? Number(form.costPrice || 0) : form.buyPrice, quantity: Number(form.quantity || 0), lowStockLevel: Number(form.lowStockLevel || 0), sellingPrice: Number(form.sellingPrice || 0) }
+    const body = normalizeProductPayload(formConfig, values)
     if (body.sellingPrice > 0 && body.sellingPrice < body.costPrice) {
       setSaving(false)
       setError('Selling price cannot be lower than the purchase price.')
@@ -975,24 +1044,8 @@ function ProductsPage({ auth, initialAdd = false }) {
     {!formOpen && <><div className="products-mobile-sync"><span>{offlineSync.online ? t('Online') : t('Offline')} · {offlineSync.snapshot.pending || 0} {t('pending')} · {offlineSync.snapshot.conflicts || 0} {t('conflicts')}</span><button type="button" className="button secondary" onClick={() => offlineSync.syncNow()} disabled={!offlineSync.online || offlineSync.syncing || !offlineSync.snapshot.pending}>{offlineSync.syncing ? t('Syncing…') : t('Sync now')}</button></div><div className="products-toolbar"><div><h2>Products</h2><p>{totalQuantity} Total Items ({rows.length} unique products)</p></div><div className="products-toolbar-actions">{canManageAdmin(auth.user) && <button className="button product-add-action" onClick={startAdd}><Plus size={14} /> Add Product</button>}<NavLink className="button secondary record-sale-button" to="/transactions/new"><ShoppingCart size={13} /> Record Sale</NavLink>{canManageAdmin(auth.user) && mode !== 'offline' && <button className="button secondary product-options-toggle" aria-label="More" title="Manage options" onClick={() => setManageOptionsOpen((value) => !value)}><Settings size={13} /><span>{manageOptionsOpen ? 'Close options' : 'Manage options'}</span></button>}<button className="button secondary products-refresh" aria-label="Refresh products" title="Refresh products" onClick={() => setRefresh((value) => value + 1)}><RefreshCw size={13} /><span>Refresh</span></button><div className="view-switch"><button className={cardView ? 'selected' : ''} aria-label="Card view" onClick={() => setCardView(true)}><Grid2X2 size={14} /></button><button className={!cardView ? 'selected' : ''} aria-label="List view" onClick={() => setCardView(false)}><List size={14} /></button></div></div></div></>}
     {message && <Notice>{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}
     {manageOptionsOpen && !formOpen && <Card className="product-options-manager"><div className="product-options-heading"><div><h3>Manage product options</h3><p>Rename a value to update products using it. Delete clears the value from those products.</p></div></div>{optionError && <Notice tone="error">{optionError}</Notice>}<div className="product-option-tabs">{[['category','Categories'],['brand','Brands'],['model','Models']].map(([type,label]) => <button type="button" className={optionType === type ? 'active' : ''} key={type} onClick={() => { setOptionType(type); setOptionEdit(null); setOptionError('') }}>{label}</button>)}</div><form className="product-option-add" onSubmit={saveOption}><input aria-label="New option name" placeholder={`Add ${optionType}`} value={optionName} onChange={(event) => setOptionName(event.target.value)} required /><button className="button" type="submit"><Plus size={14} /> Add</button></form><div className="product-option-list">{(optionType === 'category' ? categories : optionType === 'brand' ? brands : models).map((name) => <div className="product-option-row" key={`${optionType}-${name}`}>{optionEdit?.type === optionType && optionEdit?.name === name ? <form onSubmit={renameOption}><input autoFocus value={optionEdit.value} onChange={(event) => setOptionEdit({ ...optionEdit, value: event.target.value })} required /><button className="button" type="submit">Save</button><button className="button secondary" type="button" onClick={() => setOptionEdit(null)}>Cancel</button></form> : <><span>{name}</span><div><button type="button" className="button secondary" onClick={() => setOptionEdit({ type: optionType, name, value: name })}><Edit2 size={13} /> Rename</button><button type="button" className="button secondary option-delete" onClick={() => deleteOption(optionType, name)}><Trash2 size={13} /> Delete</button></div></>}</div>)}{!(optionType === 'category' ? categories : optionType === 'brand' ? brands : models).length && <p className="product-option-empty">No {optionType} options yet. Add one above.</p>}</div></Card>}
-    {formOpen && <><div className="product-add-heading"><div><h2>{editingId ? 'Edit Product' : 'Register New Stock Product'}</h2><p>Fill in product details to register new inventory stock.</p></div><button type="button" className="button secondary" onClick={() => { setFormOpen(false); navigate('/products') }}>← Back to Products</button></div><Card className="form-card product-form"><form onSubmit={submit}>
-      <section className="product-form-section"><h3>PRODUCT INFORMATION</h3><div className="product-form-grid product-info-grid">
-        <Field label={<>Product name <i>*</i></>}><input required placeholder="e.g. iPhone 15 Pro Max" value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
-        <ProductChoice label="Category" required value={form.category} options={categories} onChange={(value) => set('category', value)} />
-        <ProductChoice label="Brand" required value={form.brand} options={brands} onChange={(value) => set('brand', value)} />
-        <ProductChoice label="Model" value={form.description} options={models} onChange={(value) => set('description', value)} />
-      </div></section>
-      <section className="product-form-section"><h3>STOCK AND PRICING</h3><div className="product-form-grid stock-pricing-grid">
-        <Field label={<>Quantity <i>*</i></>}><input required min="0" type="number" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} /></Field>
-        <Field label={<>Unit <i>*</i></>}><select required value={form.unit} onChange={(e) => set('unit', e.target.value)}><option>Pieces (pcs)</option><option>Box</option><option>Pack</option><option>Kg</option><option>Gram</option><option>Liter</option><option>Meter</option></select></Field>
-        <MoneyField label={<>Purchase price (per unit) <i>*</i></>} value={form.costPrice} onChange={(value) => set('costPrice', value)} required />
-        <MoneyField label="Selling price (per unit)" value={form.sellingPrice} onChange={(value) => set('sellingPrice', value)} placeholder={t("Optional")} />
-      </div><label className="total-cost-toggle"><input type="checkbox" checked={combinedCost} onChange={(e) => setCombinedCost(e.target.checked)} /><span>This price is for all items combined (total cost)</span></label></section>
-      <section className="product-form-section"><h3>STORAGE AND SUPPLIER</h3><div className="product-form-grid storage-grid">
-        
-        <Field label={<>{t('Storage location')} <i>*</i></>}><input required placeholder="e.g. Shelf A2, Back store" value={form.location} onChange={(e) => set('location', e.target.value)} /></Field>
-        <Field label="Supplier (name or phone number)"><input placeholder="e.g. Apple Store or 0788123456" value={form.supplier} onChange={(e) => set('supplier', e.target.value)} /></Field>
-      </div><p className="form-hint">Shown when this product is chosen during a sale.</p></section>
+    {formOpen && <><div className="product-add-heading"><div><h2>{editingId ? 'Edit Product' : 'Register New Stock Product'}</h2><p>Fields follow Product Settings for this workspace.</p></div><button type="button" className="button secondary" onClick={() => { setFormOpen(false); navigate('/products') }}>← Back to Products</button></div><Card className="form-card product-form"><form onSubmit={submit}>
+      <ConfiguredProductForm config={formConfig} form={form} set={set} categories={categories} brands={brands} models={models} canManage={canManageAdmin(auth.user)} onAddOption={async (type, name, parentBrand = '') => { await api.post('/products/options', { type, name, parentBrand }); setOptionsRefresh((value) => value + 1) }} />
       {editingId && <div className="product-meta">Added {form.createdAt ? new Date(form.createdAt).toLocaleDateString() : '–'} · {form.addedBy?.name || form.addedBy?.fullName || auth.user?.name || '–'} · Updated {form.updatedAt ? new Date(form.updatedAt).toLocaleString() : '–'}</div>}
       <div className="form-actions"><button type="button" className="button secondary" onClick={() => { setFormOpen(false); navigate('/products') }}>Cancel / Back</button><button className="button" disabled={saving}>{saving ? 'Saving...' : 'Record New Product'}</button></div></form></Card></>}
     {!formOpen && <><div className="product-catalog-filters"><label className="catalog-search"><Search size={14} /><input placeholder="Search products..." value={filters.search} onChange={(e) => { setFilters({ ...filters, search: e.target.value }); setPage(1) }} /></label><button type="button" className="button secondary product-filters-toggle" onClick={() => setFiltersOpen(true)}>Filters{[filters.brand, filters.category, filters.sort && filters.sort !== 'latest'].filter(Boolean).length ? ` (${[filters.brand, filters.category, filters.sort && filters.sort !== 'latest'].filter(Boolean).length})` : ''}</button><select value={filters.brand} onChange={(e) => { setFilters({ ...filters, brand: e.target.value }); setPage(1) }}><option value="">All Brands</option>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select><select value={filters.category} onChange={(e) => { setFilters({ ...filters, category: e.target.value }); setPage(1) }}><option value="">All Categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><select value={filters.status} onChange={(e) => { setFilters({ ...filters, status: e.target.value }); setPage(1) }}><option value="">All Statuses</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select><select value={filters.sort || 'latest'} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}><option value="latest">Sort: Latest Added</option><option value="oldest">Sort: Oldest Added</option><option value="name">Sort: Product Name</option></select></div><div className="product-status-chips"><button className={!filters.status ? 'selected' : ''} onClick={() => { setFilters({ ...filters, status: '' }); setPage(1) }}>All {rows.length}</button><button className={filters.status === 'ACTIVE' ? 'selected' : ''} onClick={() => { setFilters({ ...filters, status: 'ACTIVE' }); setPage(1) }}>Active {rows.filter((row) => row.status === 'ACTIVE').length}</button><button className={filters.status === 'INACTIVE' ? 'selected' : ''} onClick={() => { setFilters({ ...filters, status: 'INACTIVE' }); setPage(1) }}>Inactive {rows.filter((row) => row.status === 'INACTIVE').length}</button></div><div className="product-mobile-sort"><select aria-label="Sort products" value={filters.sort || 'latest'} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}><option value="latest">Latest added</option><option value="oldest">Oldest added</option><option value="name">Product name</option></select></div>
@@ -1003,7 +1056,7 @@ function ProductsPage({ auth, initialAdd = false }) {
   </div></AppShell>
 }
 
-const newSaleLine = () => ({ key: `${Date.now()}-${Math.random()}`, productId: '', search: '', quantity: 1, unitPrice: 0, costPrice: 0, unit: '—' })
+const newSaleLine = () => ({ key: `${Date.now()}-${Math.random()}`, productId: '', search: '', quantity: 1, unitPrice: 0, costPrice: 0, unit: '—', saleUnit: 'unit' })
 
 function NewTransaction({ auth }) {
   const { t, mode } = useContext(PreferencesContext)
@@ -1031,8 +1084,9 @@ function NewTransaction({ auth }) {
   const profit = items.reduce((sum, item) => sum + (Number(item.unitPrice || 0) - Number(item.costPrice || 0)) * Number(item.quantity || 0), 0)
   const selectedFor = (item) => allProducts.find((product) => idOf(product) === item.productId)
   const updateItem = (key, change) => setItems((current) => current.map((item) => item.key === key ? { ...item, ...change } : item))
-  const quantitiesByProduct = items.reduce((totals, item) => item.productId ? { ...totals, [item.productId]: Number(totals[item.productId] || 0) + Number(item.quantity || 0) } : totals, {})
-  const stockError = items.some((item) => !item.productId || selectedFor(item)?.status !== 'ACTIVE' || Number(item.quantity) < 1 || Number(item.quantity) > Number(selectedFor(item)?.quantity || 0)) || Object.entries(quantitiesByProduct).some(([productId, quantity]) => quantity > Number(allProducts.find((product) => idOf(product) === productId)?.quantity || 0))
+  const stockUnits = (item) => { const product = selectedFor(item); return product?.trackStock === false ? 0 : Number(item.quantity || 0) * (item.saleUnit === 'package' ? Math.max(1, Number(product?.packageSize || 1)) : 1) }
+  const quantitiesByProduct = items.reduce((totals, item) => item.productId ? { ...totals, [item.productId]: Number(totals[item.productId] || 0) + stockUnits(item) } : totals, {})
+  const stockError = items.some((item) => { const product = selectedFor(item); return !item.productId || product?.status !== 'ACTIVE' || Number(item.quantity) < 1 || (product?.trackStock !== false && stockUnits(item) > Number(product?.quantity || 0)) }) || Object.entries(quantitiesByProduct).some(([productId, quantity]) => { const product = allProducts.find((row) => idOf(row) === productId); return product?.trackStock !== false && quantity > Number(product?.quantity || 0) })
   const searchResults = (query) => {
     const normalizedQuery = query.trim().toLocaleLowerCase()
     if (!normalizedQuery) return []
@@ -1049,7 +1103,7 @@ function NewTransaction({ auth }) {
       const operationId = crypto.randomUUID()
       await sync.enqueue({ operationId, kind: 'sale', payload: { customerName: customerName.trim() || 'General', paymentMethod, transactionDate: new Date().toISOString(), items: items.map((item) => {
         const product = selectedFor(item)
-        return { productId: item.productId, productName: product?.name, sku: product?.sku || '', category: product?.category || '', unitCost: Number(product?.costPrice || 0), quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) }
+        return { productId: item.productId, productName: product?.name, sku: product?.sku || '', category: product?.category || '', unitCost: Number(product?.costPrice || 0), quantity: Number(item.quantity), unitPrice: Number(item.unitPrice), saleUnit: item.saleUnit }
       }) } })
       let successMessage = 'Sale saved on this device and queued for synchronization.'
       if (sync.online) {
@@ -1080,9 +1134,9 @@ function NewTransaction({ auth }) {
           const product = selectedFor(item)
           const itemRevenue = Number(item.quantity || 0) * Number(item.unitPrice || 0)
           const itemProfit = Number(item.quantity || 0) * (Number(item.unitPrice || 0) - Number(item.costPrice || 0))
-          return <div className="sale-line" key={item.key}><div className="sale-line-number"><span>Item {index + 1}</span>{items.length > 1 && <button type="button" aria-label={`Remove item ${index + 1}`} onClick={() => setItems((current) => current.filter((row) => row.key !== item.key))}><Trash2 size={16} /></button>}</div><label className="sale-product-field"><span>Item name<i>*</i></span><div className="product-search-control"><input required placeholder="Search product by name, code, brand..." value={item.search} onFocus={() => setActiveSearch(item.key)} onChange={(event) => { updateItem(item.key, { search: event.target.value, productId: '' }); setActiveSearch(item.key) }} /><Search size={17} />{item.search && <button type="button" aria-label="Clear product search" onClick={() => updateItem(item.key, { search: '', productId: '' })}><X size={16} /></button>}</div>{activeSearch === item.key && item.search && <div className="sale-product-results">{searchResults(item.search).map((option) => { const inactive = option.status !== 'ACTIVE' || Number(option.quantity) <= 0; return <button type="button" key={option._id} disabled={inactive} onClick={() => { updateItem(item.key, { productId: option._id, search: option.name, unitPrice: option.sellingPrice, costPrice: option.costPrice || 0, unit: option.unit || 'Pieces (pcs)' }); setActiveSearch('') }}><strong>{option.name}</strong><span>{inactive ? 'Unavailable' : `${option.brand || option.sku || 'Product'} · ${option.quantity} pcs in stock · ${money(option.sellingPrice)} RWF`}</span></button> })}{!searchResults(item.search).length && <p>No matching products.</p>}</div>}</label>
-            <div className="sale-line-fields"><Field label="Package"><input readOnly value={product?.unit || item.unit || '—'} /></Field><Field label={<>Quantity<i>*</i></>}><div className="quantity-stepper"><button type="button" aria-label="Decrease quantity" onClick={() => updateItem(item.key, { quantity: Math.max(1, Number(item.quantity || 1) - 1) })}>−</button><input required min="1" max={product?.quantity} inputMode="numeric" type="number" value={item.quantity} onChange={(event) => updateItem(item.key, { quantity: event.target.value })} /><button type="button" aria-label="Increase quantity" onClick={() => updateItem(item.key, { quantity: Math.min(Number(product?.quantity || Infinity), Number(item.quantity || 0) + 1) })}>+</button></div></Field><MoneyField label={<>Unit price<i>*</i></>} required value={item.unitPrice} onChange={(value) => updateItem(item.key, { unitPrice: value })} /></div>
-            {product && <div className={Number(item.quantity) > Number(product.quantity) ? 'sale-stock-note error-text' : 'sale-stock-note'}>{Number(item.quantity) > Number(product.quantity) ? `Only ${product.quantity} ${product.unit || 'pcs'} in stock.` : `In stock: ${product.quantity} ${product.unit || 'pcs'} · ${product.location}`}</div>}
+          return <div className="sale-line" key={item.key}><div className="sale-line-number"><span>Item {index + 1}</span>{items.length > 1 && <button type="button" aria-label={`Remove item ${index + 1}`} onClick={() => setItems((current) => current.filter((row) => row.key !== item.key))}><Trash2 size={16} /></button>}</div><label className="sale-product-field"><span>Item name<i>*</i></span><div className="product-search-control"><input required placeholder="Search product by name, code, brand..." value={item.search} onFocus={() => setActiveSearch(item.key)} onChange={(event) => { updateItem(item.key, { search: event.target.value, productId: '' }); setActiveSearch(item.key) }} /><Search size={17} />{item.search && <button type="button" aria-label="Clear product search" onClick={() => updateItem(item.key, { search: '', productId: '' })}><X size={16} /></button>}</div>{activeSearch === item.key && item.search && <div className="sale-product-results">{searchResults(item.search).map((option) => { const inactive = option.status !== 'ACTIVE' || (option.trackStock !== false && Number(option.quantity) <= 0); return <button type="button" key={option._id} disabled={inactive} onClick={() => { updateItem(item.key, { productId: option._id, search: option.name, unitPrice: option.sellingPrice, costPrice: option.costPrice || 0, unit: option.unit || 'Pieces (pcs)', saleUnit: 'unit' }); setActiveSearch('') }}><strong>{option.name}</strong><span>{inactive ? 'Unavailable' : `${option.trackStock === false ? 'Always available' : `${option.quantity} pcs in stock`} · ${money(option.sellingPrice)} RWF`}</span></button> })}{!searchResults(item.search).length && <p>No matching products.</p>}</div>}</label>
+            <div className="sale-line-fields"><Field label="Sold as"><select value={item.saleUnit} onChange={(event) => { const saleUnit = event.target.value; updateItem(item.key, { saleUnit, unitPrice: saleUnit === 'package' ? Number(product?.packageSellingPrice ?? product?.sellingPrice ?? 0) : Number(product?.sellingPrice || 0) }) }}><option value="unit">{product?.unit || 'Unit'}</option>{product?.packageSize && product?.packageSellingPrice != null && <option value="package">{product?.packageName || 'Package'} ({product.packageSize})</option>}</select></Field><Field label={<>Quantity<i>*</i></>}><div className="quantity-stepper"><button type="button" aria-label="Decrease quantity" onClick={() => updateItem(item.key, { quantity: Math.max(1, Number(item.quantity || 1) - 1) })}>−</button><input required min="1" inputMode="numeric" type="number" value={item.quantity} onChange={(event) => updateItem(item.key, { quantity: event.target.value })} /><button type="button" aria-label="Increase quantity" onClick={() => updateItem(item.key, { quantity: Number(item.quantity || 0) + 1 })}>+</button></div></Field><MoneyField label={<>Price<i>*</i></>} required value={item.unitPrice} onChange={(value) => updateItem(item.key, { unitPrice: value })} /></div>
+            {product && <div className={product.trackStock !== false && stockUnits(item) > Number(product.quantity) ? 'sale-stock-note error-text' : 'sale-stock-note'}>{product.trackStock === false ? 'Always available — stock is not tracked.' : stockUnits(item) > Number(product.quantity) ? `Only ${product.quantity} ${product.unit || 'pcs'} in stock.` : `In stock: ${product.quantity} ${product.unit || 'pcs'} · ${product.location}`}</div>}
             <div className="sale-line-totals"><span>Line total</span><b>{money(itemRevenue)} RWF</b><span className="desktop-only">Total Profits: <b>{money(itemProfit)} RWF</b></span></div>
           </div>
         })}
@@ -1099,14 +1153,35 @@ function Field({ label, children }) {
   return <label><span>{localizeNode(label, t)}</span>{localizeNode(children, t)}</label>
 }
 
-function ProductChoice({ label, value, options, onChange, required = false, wide = false }) {
+function ConfiguredProductForm({ config, form, set, categories, brands, models, canManage, onAddOption }) {
+  const groups = getVisibleFields(config, form)
+  const input = (label, key, required, type = 'text') => <Field label={<>{label}{required && <i>*</i>}</>}><input required={required} type={type} min={type === 'number' ? 0 : undefined} value={form[key] ?? ''} onChange={(event) => set(key, event.target.value)} /></Field>
+  const render = (item) => {
+    const label = item.label; const required = item.required
+    if (item.key === 'track') return <Field label={label}><input aria-label={label} type="checkbox" checked={form.trackStock !== false} onChange={(event) => set('trackStock', event.target.checked)} /></Field>
+    if (item.key === 'category') return <ProductChoice label={label} required={required} value={form.category} options={categories} onChange={(value) => set('category', value)} canManage={canManage} onAddNew={(name) => onAddOption('category', name)} />
+    if (item.key === 'brand') return <ProductChoice label={label} required={required} value={form.brand} options={brands} onChange={(value) => set('brand', value)} canManage={canManage} onAddNew={(name) => onAddOption('brand', name)} />
+    if (item.key === 'model') return <ProductChoice label={label} required={required} value={form.model} options={models} onChange={(value) => set('model', value)} canManage={canManage} onAddNew={(name) => onAddOption('model', name, form.brand)} />
+    if (item.key === 'unit') return <Field label={<>{label}{required && <i>*</i>}</>}><select required={required} value={form.unit} onChange={(event) => set('unit', event.target.value)}>{['Pieces (pcs)', 'Bottle', 'Box', 'Pack', 'Kg', 'Liter', 'Meter'].map((unit) => <option key={unit}>{unit}</option>)}</select></Field>
+    if (item.key === 'pkg') return <><Field label={<>{label}{required && <i>*</i>}</>}><input required={required} value={form.packageName || ''} placeholder="Crate" onChange={(event) => set('packageName', event.target.value)} /></Field>{input('Units per package', 'packageSize', required, 'number')}</>
+    if (item.key === 'buy') return <><MoneyField label={<>{label}{required && <i>*</i>}</>} required={required} value={form.buyPrice ?? ''} onChange={(value) => set('buyPrice', value)} /><Field label="Purchase basis"><select value={form.buyBasis || 'unit'} onChange={(event) => set('buyBasis', event.target.value)}><option value="unit">Per unit</option><option value="package">Per package</option><option value="all">All items</option></select></Field></>
+    if (item.key === 'est') return <MoneyField label={<>{label}{required && <i>*</i>}</>} required={required} value={form.estimatedCostPerUnit ?? ''} onChange={(value) => set('estimatedCostPerUnit', value)} />
+    if (item.key === 'sell') return <MoneyField label={<>{label}{required && <i>*</i>}</>} required={required} value={form.sellingPrice ?? ''} onChange={(value) => set('sellingPrice', value)} />
+    if (item.key === 'psell') return <MoneyField label={<>{label}{required && <i>*</i>}</>} required={required} value={form.packageSellingPrice ?? ''} onChange={(value) => set('packageSellingPrice', value)} />
+    const map = { name: 'name', qty: 'quantity', exp: 'expiryDate', low: 'lowStockLevel', loc: 'location', sup: 'supplier' }
+    return input(label, map[item.key], required, item.key === 'exp' ? 'date' : ['qty', 'low'].includes(item.key) ? 'number' : 'text')
+  }
+  return groups.map((group) => <section className="product-form-section" key={group.group}><h3>{group.group.toUpperCase()}</h3><div className="product-form-grid">{group.fields.map((item) => <div key={item.key}>{render(item)}</div>)}</div></section>)
+}
+
+function ProductChoice({ label, value, options, onChange, required = false, wide = false, canManage = false, onAddNew }) {
   const { t } = useContext(PreferencesContext)
   return <div className={'product-choice' + (wide ? ' wide' : '')}>
     <div className="product-choice-heading"><span>{t(label)}{required && <> <i>*</i></>}</span></div>
     <select required={required} value={value} onChange={(event) => onChange(event.target.value)}>
       <option value="">{t('Select')} {t(label.toLowerCase())}</option>
       {options.map((option) => <option key={option} value={option}>{option}</option>)}
-    </select>
+    </select>{canManage && onAddNew && <button type="button" className="button secondary" onClick={async () => { const name = window.prompt(`Add ${label}`); if (name?.trim()) await onAddNew(name.trim()) }}>+ Add new</button>}
   </div>
 }
 
@@ -1525,6 +1600,7 @@ function AppRoutes() {
     <Route path="/sold-products" element={protect(<SoldProductsPage auth={auth} />)} />
     <Route path="/products" element={protect(<ProductsPage auth={auth} />)} />
     <Route path="/products/new" element={protect(<RoleProtected auth={auth} admin><ProductsPage auth={auth} initialAdd /></RoleProtected>)} />
+    <Route path="/settings/products" element={protect(<RoleProtected auth={auth} admin><ProductSettingsPage auth={auth} /></RoleProtected>)} />
     <Route path="/reports" element={protect(<ReportsPage auth={auth} />)} />
     <Route path="/expenses" element={protect(<ResourcePage auth={auth} type="expenses" title="Imported stock" />)} />
     <Route path="/account" element={protect(<WorkspaceInfoPage auth={auth} title="Account Information" description="Review your user account details." />)} />

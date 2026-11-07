@@ -75,6 +75,7 @@ export async function refreshOfflineDatasets(user) {
   const requests = [
     ['/products', {}, async (data) => rememberProducts(userId, data)],
     ['/products/options', {}, null],
+    ['/product-settings', {}, null],
     ['/transactions', { limit: 1000 }, async (data) => cacheSalesHistory(userId, data)],
     ['/expenses', {}, null],
     ...(isAdmin ? [['/users', {}, async (data) => data.map(({ _id, id, name, fullName }) => ({ _id: _id || id, name: fullName || name }))]] : []),

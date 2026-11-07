@@ -140,7 +140,8 @@ export async function enqueueOperation(userId, operation) {
         const item = items[index]
         const product = await offlineDb.products.get([String(userId), String(item.productId)])
         if (product) {
-          product.quantity = Math.max(0, Number(product.quantity || 0) - Number(item.quantity || 0))
+          const units = product.trackStock === false ? 0 : Number(item.quantity || 0) * (item.saleUnit === 'package' ? Math.max(1, Number(product.packageSize || 1)) : 1)
+          product.quantity = Math.max(0, Number(product.quantity || 0) - units)
           await offlineDb.products.put(product)
         }
         await offlineDb.salesHistory.put({
@@ -235,7 +236,8 @@ async function reverseOptimisticStock(userId, operation) {
   for (const item of stockLines || []) {
     const product = await offlineDb.products.get([String(userId), String(item.productId)])
     if (product) {
-      product.quantity = Math.max(0, Number(product.quantity || 0) + adjustment * Number(item.quantity || 0))
+      const units = operation.kind === 'sale' && product.trackStock === false ? 0 : Number(item.quantity || 0) * (operation.kind === 'sale' && item.saleUnit === 'package' ? Math.max(1, Number(product.packageSize || 1)) : 1)
+      product.quantity = Math.max(0, Number(product.quantity || 0) + adjustment * units)
       await offlineDb.products.put(product)
     }
   }
